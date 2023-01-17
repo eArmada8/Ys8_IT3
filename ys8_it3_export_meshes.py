@@ -241,6 +241,7 @@ def parse_vpax_block (f, trim_for_gpu = False, game_version = 1):
         size, = struct.unpack("<I", f.read(4))
         data = parse_data_blocks(f)
         indices.append(data)
+    section_info = []
     for i in range(count):
         with io.BytesIO(vertices[i]) as vb_stream:
             mesh = {}
@@ -274,7 +275,8 @@ def parse_vpax_block (f, trim_for_gpu = False, game_version = 1):
                 else:
                     mesh_buffers.append({'fmt': make_88_fmt(), 'ib': ib,\
                         'vb': [vb[i] for i in [0,1,4,5,6,7,8,9,10,11,14,16]]})
-    return(mesh_buffers)
+            section_info.append(mesh)
+    return(section_info, mesh_buffers)
 
 def write_fmt_ib_vb (mesh_buffer, filename, node_list = False, complete_maps = False):
     print("Processing submesh {0}...".format(filename))
@@ -330,7 +332,8 @@ def process_it3 (it3_name, complete_maps = False, trim_for_gpu = False, overwrit
                 section_info["data"] = parse_bon3_block(f)
             elif section_info["type"] == 'VPAX':
                 print("Processing section {0}".format(info_section))
-                meshes.append({'name': info_section, 'meshes': parse_vpax_block(f, trim_for_gpu = trim_for_gpu)})
+                section_info["data"], mesh_data = parse_vpax_block(f, trim_for_gpu = trim_for_gpu)
+                meshes.append({'name': info_section, 'meshes': mesh_data})
             contents.append(section_info)
             f.seek(section_info["section_start_offset"] + section_info["size"], 0) # Move forward to the next section
     it3_json_filename = it3_name[:-4] + '/container_info.json'
