@@ -11,9 +11,10 @@
 # GitHub eArmada8/Ys8_IT3
 
 import struct, base64, io, json, os, sys, glob
+from itertools import chain
 from lib_fmtibvb import *
 
-def make_fmt():
+def make_160_fmt():
     return({'stride': '160', 'topology': 'trianglelist', 'format': 'DXGI_FORMAT_R16_UINT',\
         'elements': [{'id': '0', 'SemanticName': 'POSITION', 'SemanticIndex': '0',\
         'Format': 'R32G32B32A32_FLOAT', 'InputSlot': '0', 'AlignedByteOffset': '0',\
@@ -61,6 +62,41 @@ def make_fmt():
         'SemanticName': 'UNKNOWN', 'SemanticIndex': '9', 'Format': 'R8G8B8A8_UINT',\
         'InputSlot': '0', 'AlignedByteOffset': '156', 'InputSlotClass': 'per-vertex',\
         'InstanceDataStepRate': '0'}]})
+
+def make_88_fmt():
+    return({'stride': '88', 'topology': 'trianglelist', 'format': 'DXGI_FORMAT_R32_UINT',\
+        'elements': [{'id': '0', 'SemanticName': 'POSITION', 'SemanticIndex': '0',\
+        'Format': 'R32G32B32A32_FLOAT', 'InputSlot': '0', 'AlignedByteOffset': '0',\
+        'InputSlotClass': 'per-vertex', 'InstanceDataStepRate': '0'}, {'id': '1',\
+        'SemanticName': 'UNKNOWN', 'SemanticIndex': '0',\
+        'Format': 'R32G32B32A32_FLOAT', 'InputSlot': '0', 'AlignedByteOffset': '16',\
+        'InputSlotClass': 'per-vertex', 'InstanceDataStepRate': '0'}, {'id': '2',\
+        'SemanticName': 'NORMAL', 'SemanticIndex': '0', 'Format': 'R8G8B8A8_SNORM',\
+        'InputSlot': '0', 'AlignedByteOffset': '32', 'InputSlotClass': 'per-vertex',\
+        'InstanceDataStepRate': '0'}, {'id': '3',\
+        'SemanticName': 'UNKNOWN', 'SemanticIndex': '1', 'Format': 'R8G8B8A8_SNORM',\
+        'InputSlot': '0', 'AlignedByteOffset': '36', 'InputSlotClass': 'per-vertex',\
+        'InstanceDataStepRate': '0'}, {'id': '4', 'SemanticName': 'COLOR', 'SemanticIndex': '0',\
+        'Format': 'R8G8B8A8_UNORM', 'InputSlot': '0', 'AlignedByteOffset': '40',\
+        'InputSlotClass': 'per-vertex', 'InstanceDataStepRate': '0'}, {'id': '5',\
+        'SemanticName': 'COLOR', 'SemanticIndex': '1', 'Format': 'R8G8B8A8_UNORM',\
+        'InputSlot': '0', 'AlignedByteOffset': '44', 'InputSlotClass': 'per-vertex',\
+        'InstanceDataStepRate': '0'}, {'id': '6', 'SemanticName': 'TEXCOORD',\
+        'SemanticIndex': '0', 'Format': 'R32G32_FLOAT', 'InputSlot': '0',\
+        'AlignedByteOffset': '48', 'InputSlotClass': 'per-vertex',\
+        'InstanceDataStepRate': '0'}, {'id': '7', 'SemanticName': 'UNKNOWN',\
+        'SemanticIndex': '2', 'Format': 'R32G32_FLOAT', 'InputSlot': '0',\
+        'AlignedByteOffset': '56', 'InputSlotClass': 'per-vertex', 'InstanceDataStepRate': '0'},\
+        {'id': '8', 'SemanticName': 'TEXCOORD', 'SemanticIndex': '1', 'Format': 'R32G32_FLOAT',\
+        'InputSlot': '0', 'AlignedByteOffset': '64', 'InputSlotClass': 'per-vertex',\
+        'InstanceDataStepRate': '0'}, {'id': '9', 'SemanticName': 'UNKNOWN', 'SemanticIndex': '3',\
+        'Format': 'R32G32_FLOAT', 'InputSlot': '0', 'AlignedByteOffset': '72',\
+        'InputSlotClass': 'per-vertex', 'InstanceDataStepRate': '0'}, {'id': '10',\
+        'SemanticName': 'BLENDWEIGHTS', 'SemanticIndex': '0', 'Format': 'R8G8B8A8_UNORM',\
+        'InputSlot': '0', 'AlignedByteOffset': '80', 'InputSlotClass': 'per-vertex',\
+        'InstanceDataStepRate': '0'}, {'id': '11', 'SemanticName': 'BLENDINDICES',\
+        'SemanticIndex': '0', 'Format': 'R8G8B8A8_UINT', 'InputSlot': '0',\
+        'AlignedByteOffset': '84', 'InputSlotClass': 'per-vertex', 'InstanceDataStepRate': '0'}]})
 
 def parse_data_block (f, block_size, is_compressed):
     # TODO: Find out what compression algorithm this is, and implement it using the standard library
@@ -187,11 +223,14 @@ def parse_bon3_block (f):
         addr_bone += 64
     return({'mesh_name': mesh_name, 'joints': joints, 'bones': bones})
 
-def parse_vpax_block (f, game_version = 1):
+def parse_vpax_block (f, trim_for_gpu = False, game_version = 1):
     count, = struct.unpack("<I", f.read(4))
     indices = []
     vertices = []
-    ibvbs = []
+    mesh_buffers = []
+    fmt_struct = make_160_fmt()
+    if game_version == 2:
+        fmt_struct["format"] = "DXGI_FORMAT_R32_UINT"
     for i in range(count):
         print("Decompressing vertex buffer {0}".format(i))
         size, = struct.unpack("<I", f.read(4))
@@ -203,44 +242,58 @@ def parse_vpax_block (f, game_version = 1):
         data = parse_data_blocks(f)
         indices.append(data)
     for i in range(count):
-        vb_stream = io.BytesIO(vertices[i])
-        mesh = {}
-        mesh["header"] = {'name': vb_stream.read(4).decode('ASCII'), 'version': struct.unpack("<I", vb_stream.read(4))[0],\
-            'v0': struct.unpack("<4f", vb_stream.read(16)), 'v1': struct.unpack("<4f", vb_stream.read(16)),\
-            'v2': struct.unpack("<4f", vb_stream.read(16)), 'uint0': struct.unpack("<77I", vb_stream.read(308))}
-        if mesh["header"]["name"] == 'VPAC':
-            mask, count, uVar1, iVar4, local_c = mesh["header"]["uint0"][2], 0x10, 1, 0, 0
-            while True: # Measure total stride (iVar4) by looking at the bits in the mask
-                if ((mask & uVar1) != 0):
-                    if uVar1 in [1, 2, 4, 8, 0x100, 0x200, 0x400, 0x800]:
-                        iVar4 += 0x10 # Add 16 to the stride if bit is 1
-                        local_c += 1
-                    elif uVar1 in [0x10, 0x20, 0x40, 0x80, 0x1000, 0x2000, 0x4000, 0x8000]:
-                        iVar4 += 4 # Add 4 to the stride if bit is 1
-                        local_c += 1
-                uVar1 = uVar1 << 1 | int(uVar1 <0) # Bit-shifting 1, 2, 4, 8, 16, 32, etc total 16 times
-                count -= 1
-                if count == 0:
-                    break
-            count1 = local_c # Number of positive bits
-            count2 = mesh["header"]["uint0"][0] # Vertex count
-            mesh["material_id"] = mesh["header"]["uint0"][68]
-            mesh["block_size"] = iVar4 # Not sure why we did this, since it seems stride is always 160?
-            mesh["vertex_count"] = mesh["header"]["uint0"][0]
-            vb = vb_stream.read(mesh["block_size"] * mesh["vertex_count"])
-            vb_stream.close()
-            ib = indices[i]
-            ibvbs.append({'ib': ib, 'vb': vb}) #TODO: return in format compatible with lib_fmtibvb?
-    return(ibvbs)
+        with io.BytesIO(vertices[i]) as vb_stream:
+            mesh = {}
+            mesh["header"] = {'name': vb_stream.read(4).decode('ASCII'), 'version': struct.unpack("<I", vb_stream.read(4))[0],\
+                'v0': struct.unpack("<4f", vb_stream.read(16)), 'v1': struct.unpack("<4f", vb_stream.read(16)),\
+                'v2': struct.unpack("<4f", vb_stream.read(16)), 'uint0': struct.unpack("<77I", vb_stream.read(308))}
+            if mesh["header"]["name"] == 'VPAC':
+                mask, count, uVar1, iVar4, local_c = mesh["header"]["uint0"][2], 0x10, 1, 0, 0
+                while True: # Measure total stride (iVar4) by looking at the bits in the mask
+                    if ((mask & uVar1) != 0):
+                        if uVar1 in [1, 2, 4, 8, 0x100, 0x200, 0x400, 0x800]:
+                            iVar4 += 0x10 # Add 16 to the stride if bit is 1
+                            local_c += 1
+                        elif uVar1 in [0x10, 0x20, 0x40, 0x80, 0x1000, 0x2000, 0x4000, 0x8000]:
+                            iVar4 += 4 # Add 4 to the stride if bit is 1
+                            local_c += 1
+                    uVar1 = uVar1 << 1 | int(uVar1 <0) # Bit-shifting 1, 2, 4, 8, 16, 32, etc total 16 times
+                    count -= 1
+                    if count == 0:
+                        break
+                count1 = local_c # Number of positive bits
+                count2 = mesh["header"]["uint0"][0] # Vertex count
+                mesh["material_id"] = mesh["header"]["uint0"][68]
+                mesh["block_size"] = iVar4 # Not sure why we did this, since it seems stride is always 160?
+                mesh["vertex_count"] = mesh["header"]["uint0"][0]
+                #vb = vb_stream.read(mesh["block_size"] * mesh["vertex_count"])
+                vb = read_vb_stream(vb_stream.read(), fmt_struct, e = '<')
+                ib = read_ib_stream(indices[i], fmt_struct, e = '<')
+                if trim_for_gpu == False:
+                    mesh_buffers.append({'fmt': fmt_struct, 'ib': ib, 'vb': vb})
+                else:
+                    mesh_buffers.append({'fmt': make_88_fmt(), 'ib': ib,\
+                        'vb': [vb[i] for i in [0,1,4,5,6,7,8,9,10,11,14,16]]})
+    return(mesh_buffers)
 
-def make_vgmap (bones, name):
-    vgmap = {name: 0}
-    for i in range(len(bones)):
-        vgmap[bones[i]] = i+1
-    return(vgmap)
+def write_fmt_ib_vb (mesh_buffer, filename, node_list = False, complete_maps = False):
+    print("Processing submesh {0}...".format(filename))
+    write_fmt(mesh_buffer['fmt'], filename + '.fmt')
+    write_ib(mesh_buffer['ib'], filename +  '.ib', mesh_buffer['fmt'])
+    write_vb(mesh_buffer['vb'], filename +  '.vb', mesh_buffer['fmt'])
+    if not node_list == False:
+        # Find vertex groups referenced by vertices so that we can cull the empty ones
+        active_nodes = list(set(list(chain.from_iterable([x["Buffer"] for x in mesh_buffer["vb"] \
+            if x["SemanticName"] == 'BLENDINDICES'][0]))))
+        vgmap_json = {}
+        for i in range(len(node_list)):
+            if (i in active_nodes) or (complete_maps == True):
+                vgmap_json[node_list[i]] = i
+        with open(filename + '.vgmap', 'wb') as f:
+            f.write(json.dumps(vgmap_json, indent=4).encode("utf-8"))
+    return
 
-def process_it3 (it3_name, overwrite = False):
-    fmt = make_fmt()
+def process_it3 (it3_name, complete_maps = False, trim_for_gpu = False, overwrite = False):
     with open(it3_name, 'rb') as f:
         print("Processing {0}".format(it3_name))
         file_length = f.seek(0,2)
@@ -277,7 +330,7 @@ def process_it3 (it3_name, overwrite = False):
                 section_info["data"] = parse_bon3_block(f)
             elif section_info["type"] == 'VPAX':
                 print("Processing section {0}".format(info_section))
-                meshes.append({'name': info_section, 'meshes': parse_vpax_block(f)})
+                meshes.append({'name': info_section, 'meshes': parse_vpax_block(f, trim_for_gpu = trim_for_gpu)})
             contents.append(section_info)
             f.seek(section_info["section_start_offset"] + section_info["size"], 0) # Move forward to the next section
     it3_json_filename = it3_name[:-4] + '/container_info.json'
@@ -290,18 +343,16 @@ def process_it3 (it3_name, overwrite = False):
         with open(it3_json_filename, 'wb') as f:
             f.write(json.dumps(contents, indent=4).encode("utf-8"))
         for i in range(len(meshes)):
-            print("Writing {0}".format(meshes[i]["name"]))
             for j in range(len(meshes[i]["meshes"])):
-                write_fmt(fmt, it3_name[:-4] + "/{0}_{1}.fmt".format(meshes[i]["name"],j))
-                with open(it3_name[:-4] + "/{0}_{1}.ib".format(meshes[i]["name"],j),'wb') as f:
-                    f.write(meshes[i]["meshes"][j]["ib"])
-                with open(it3_name[:-4] + "/{0}_{1}.vb".format(meshes[i]["name"],j),'wb') as f:
-                    f.write(meshes[i]["meshes"][j]["vb"])
                 bone_section = [x for x in contents if x['type'] == 'BON3' and x['info_name'] == meshes[i]["name"]]
                 if len(bone_section) > 0:
-                    vgmap = make_vgmap(bone_section[0]['data']['joints'], meshes[i]["name"])
-                    with open(it3_name[:-4] + "/{0}_{1}.vgmap".format(meshes[i]["name"],j), 'wb') as f:
-                        f.write(json.dumps(vgmap, indent=4).encode("utf-8"))
+                    # For some reason Ys VIII starts numbering at 1 (root is node 1, not node 0)
+                    node_list = [meshes[i]["name"]] + bone_section[0]['data']['joints']
+                else:
+                    node_list = False
+                write_fmt_ib_vb(meshes[i]["meshes"][j], it3_name[:-4] +\
+                    '/{0}_{1}_{2:02d}'.format(i, meshes[i]["name"], j),\
+                    node_list = node_list, complete_maps = complete_maps)
     return
 
 if __name__ == "__main__":
@@ -312,11 +363,13 @@ if __name__ == "__main__":
     if len(sys.argv) > 1:
         import argparse
         parser = argparse.ArgumentParser()
+        parser.add_argument('-c', '--completemaps', help="Provide vgmaps with entire mesh skeleton", action="store_true")
+        parser.add_argument('-t', '--trim_for_gpu', help="Trim vertex buffer for GPU injection (3DMigoto)", action="store_true")
         parser.add_argument('-o', '--overwrite', help="Overwrite existing files", action="store_true")
         parser.add_argument('it3_filename', help="Name of it3 file to export from (required).")
         args = parser.parse_args()
         if os.path.exists(args.it3_filename) and args.it3_filename[-4:].lower() == '.it3':
-            process_it3(args.it3_filename, overwrite = args.overwrite)
+            process_it3(args.it3_filename, complete_maps = args.completemaps, trim_for_gpu = args.trim_for_gpu, overwrite = args.overwrite)
     else:
         it3_files = glob.glob('*.it3')
         for i in range(len(it3_files)):
