@@ -18,10 +18,16 @@ I am very thankful for TwnKey, uyjulian, DarkStarSword, and the Kiseki modding d
 Double click the python script and it will search the current folder for all .it3 files and export the meshes into a folder with the same name as the it3 file.  Additionally, it will output a very incomplete JSON file with metadata, which I am using to understand this format further (there is no practical use just yet).
 
 **Command line arguments:**
-`ys8_it3_export_meshes.py [-h] [-o] it3_filename`
+`ys8_it3_export_meshes.py [-h] [-c] [-t] [-o] it3_filename`
 
 `-h, --help`
 Shows help message.
+
+`-c, --completemaps`
+.vgmap files will have the entire skeleton, with every bone available to the mesh, included with each mesh.  This will result in many empty vertex groups upon import into Blender.  The default behavior is to only include vertex groups that contain at least one vertex.  Complete maps are primarily useful when merging one mesh into another.
+
+`-t, --trim_for_gpu`
+Trim vertex buffer for GPU injection (3DMigoto).  Meshes in the IT3 file have 18 vertex buffer semantics.  Only 12 of these are actually loaded into GPU memory.  This option produces smaller .vb files (with matching .fmt files) with the extraneous buffers discarded, so that the buffers can be used for injection with 3DMigoto.
 
 `-o, --overwrite`
 Overwrite existing files without prompting.
