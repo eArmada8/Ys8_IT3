@@ -1,5 +1,5 @@
-# Ys VIII IT3 mesh export
-A script to get the mesh data out of IT3 files, hopefully someday will add a way to get mesh data back into the IT3 file.  The output is in .fmt/.vb/.ib files that are compatible with DarkStarSword Blender import plugin for 3DMigoto, and metadata is in JSON format.
+# Ys VIII IT3 mesh and texture export
+A script to get the mesh data and textures out of IT3 files, hopefully someday will add a way to get both back into the IT3 file.  The mesh output is in .fmt/.vb/.ib files that are compatible with DarkStarSword Blender import plugin for 3DMigoto, textures are in DDS format, and metadata is in JSON format.
 
 ## Credits:
 99.9% of my understanding of the IT3 format comes from the reverse engineering work of TwnKey (github.com/TwnKey), and specifically TwnKey's model dumper (https://github.com/TwnKey.com/YsVIII_model_dump/).
@@ -15,7 +15,7 @@ I am very thankful for TwnKey, uyjulian, DarkStarSword, and the Kiseki modding d
 
 ## Usage:
 ### ys8_it3_export_meshes.py
-Double click the python script and it will search the current folder for all .it3 files and export the meshes into a folder with the same name as the it3 file.  Additionally, it will output a very incomplete JSON file with metadata, which I am using to understand this format further (there is no practical use just yet).
+Double click the python script and it will search the current folder for all .it3 files and export the meshes and textures into a folder with the same name as the it3 file.  Additionally, it will output a very incomplete JSON file with metadata, which I am using to understand this format further (there is no practical use just yet).
 
 **Command line arguments:**
 `ys8_it3_export_meshes.py [-h] [-c] [-t] [-o] it3_filename`
