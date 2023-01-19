@@ -295,56 +295,166 @@ def write_fmt_ib_vb (mesh_buffer, filename, node_list = False, complete_maps = F
             f.write(json.dumps(vgmap_json, indent=4).encode("utf-8"))
     return
 
-def process_it3 (it3_name, complete_maps = False, trim_for_gpu = False, overwrite = False):
-    with open(it3_name, 'rb') as f:
-        print("Processing {0}".format(it3_name))
-        file_length = f.seek(0,2)
-        f.seek(0,0)
-        contents = []
-        info_section = ''
-        meshes = []
-        while f.tell() < file_length:
-            current_offset = f.tell()
-            section_info = {}
-            section_info["type"] = f.read(4).decode('ASCII')
-            section_info["size"], = struct.unpack("<I",f.read(4))
-            section_info["section_start_offset"] = f.tell()
-            if section_info["type"] == 'INFO':
-                section_info["data"] = parse_info_block(f)
-                info_section = section_info["data"]["name"]
+def dds_header (dwHeight, dwWidth, dwPitchOrLinearSize):
+    header_info = {'dwSize': 124, 'dwFlags': 0xA1007, 'dwHeight': dwHeight,\
+        'dwWidth': dwWidth, 'dwPitchOrLinearSize': dwPitchOrLinearSize,\
+        'dwDepth': 1, 'dwMipMapCount': 1, 'pixel_format': {'dwSize': 32,\
+        'dwFlags': 0x4, 'dwFourCC': 'DX10', 'dwRGBBitCount': 0, 'dwRBitMask': 0,\
+        'dwGBitMask': 0, 'dwBBitMask': 0, 'dwABitMask': 0}, 'dwCaps': 0x1000,\
+        'dwCaps2': 0, 'dwCaps3': 0, 'dwCaps4': 0, 'dxt10_header':\
+        {'dxgiFormat': 98, 'resourceDimension': 3, 'miscFlag': 0, 'arraySize': 1, 'miscFlags2': 0}}
+    header = b'DDS ' + struct.pack("<18I", *([header_info['dwSize'], header_info['dwFlags'],\
+        header_info['dwHeight'], header_info['dwWidth'], header_info['dwPitchOrLinearSize'],\
+        header_info['dwDepth'], header_info['dwMipMapCount']] + [0 for x in range(11)]))
+    header += struct.pack("<2I", header_info["pixel_format"]['dwSize'], header_info["pixel_format"]['dwFlags'])
+    header += header_info["pixel_format"]['dwFourCC'].encode()
+    header += struct.pack("<5I", header_info["pixel_format"]['dwRGBBitCount'], header_info["pixel_format"]['dwRBitMask'],\
+        header_info["pixel_format"]['dwGBitMask'], header_info["pixel_format"]['dwBBitMask'],\
+        header_info["pixel_format"]['dwABitMask'])
+    header += struct.pack("<5I", header_info['dwCaps'], header_info['dwCaps2'], header_info['dwCaps3'],\
+        header_info['dwCaps4'], 0)
+    header += struct.pack("<5I", header_info['dxt10_header']['dxgiFormat'], header_info['dxt10_header']['resourceDimension'],\
+        header_info['dxt10_header']['miscFlag'], header_info['dxt10_header']['arraySize'],\
+        header_info['dxt10_header']['miscFlags2'])
+    return(header)
+
+# Like everything else in this script, adapted from TwnKey's work.  TwnKey credits GFD studio.
+def morton (t, sx, sy):
+    num = [1,1,t,sx,sy,0,0]
+    while num[3] > 1 or num[4] > 1:
+        if num[3] > 1:
+            num[5] += num[1] * (num[2] & 1)
+            num[2] >>= 1
+            num[1] *= 2
+            num[3] >>= 1
+        if num[4] > 1:
+            num[6] += num[0] * (num[2] & 1)
+            num[2] >>= 1
+            num[0] *= 2
+            num[4] >>= 1
+    return(num[6] * sx + num[5])
+
+def unswizzle (texture_data, dwHeight, dwWidth, block_size):
+    morton_seq = [morton(x,8,8) for x in range(64)]
+    output = bytearray(dwHeight * dwWidth)
+    data_index = 0
+    for y in range(((dwHeight // 4) + 7) // 8):
+        for x in range(((dwWidth // 4) + 7) // 8):
+            for t in range(64):
+                y_offset = (y * 8) + (morton_seq[t] // 8)
+                x_offset = (x * 8) + (morton_seq[t] % 8)
+                if (x_offset < dwWidth // 4) and (y_offset < dwHeight // 4):
+                    dest_index = block_size * (y_offset * (dwWidth // 4) + x_offset)
+                    output[dest_index:dest_index+block_size] = texture_data[data_index:data_index+block_size]
+                data_index += block_size
+    return(output)
+
+def parse_texi_block (f):
+    section_info = []
+    valid_bpps = [0,1,2,4,5,6,7,8,10]
+    bpp_multipliers = {0:8,1:8,2:8,4:0x10,5:0x20,6:4,7:8,8:8,10:8}
+    texture_data = bytes()
+    if f.read(4) == b'ITP\xff':
+        while True:
+            section = {"type": f.read(4).decode('ASCII')}
+            size, = struct.unpack("<I", f.read(4))
+            if section["type"] == 'IHDR':
+                section["data"] = {}
+                section["data"]["unk0"], section["data"]["dim1"], section["data"]["dim2"],\
+                    section["data"]["compressed_size"], section["data"]["s1"], section["data"]["bpp"],\
+                    section["data"]["s3"], section["data"]["s4"], section["data"]["type"],\
+                    section["data"]["s6"], section["data"]["unk1"] = struct.unpack("<4I6HI", f.read(32))
+            elif section["type"] == 'IALP':
+                section["data"] = list(struct.unpack("<2I", f.read(8)))
+            elif section["type"] == 'IMIP':
+                section["data"] = list(struct.unpack("<3I", f.read(12)))
+            elif section["type"] == 'IHAS':
+                section["data"] = list(struct.unpack("<2I2f", f.read(16)))
+            elif section["type"] == 'IDAT':
+                section["data"] = {}
+                section["data"]["unk0"], section["data"]["unk1"] = struct.unpack("<2I", f.read(8))
+                ihdr = [x for x in section_info if x['type'] == 'IHDR']
+                if len(ihdr) > 0:
+                    if ((ihdr[0]['data']['type'] & 0xFFFFFF00) | (ihdr[0]['data']['type'] == 2)):
+                        section["data"]["bug_report"] = 'Not expected in TwnKey\'s code'
+                        section["data"]["unk2"], section["data"]["unk3"] = struct.unpack("<2I", f.read(8))
+                        texture_data = parse_data_blocks(f)
+                    else:
+                        if ihdr[0]['data']['type'] in [1,2,3]:
+                            texture_data = parse_data_blocks(f)
+                        elif ihdr[0]['data']['bpp'] in valid_bpps:
+                            texture_data = f.read(bpp_multipliers[ihdr[0]['data']['bpp']] * ihdr[0]['data']['dim1'] * ihdr[0]['data']['dim2'])
+                        else:
+                            f.seek(size-8,1)
+                else:
+                    f.seek(size-8,1)
+            elif section["type"] == 'IEND':
+                break
             else:
-                section_info["info_name"] = info_section
-            if section_info["type"] == 'RTY2':
-                section_info["data"] = parse_rty2_block(f)
-            elif section_info["type"] == 'LIG3':
-                section_info["data"] = parse_lig3_block(f)
-            elif section_info["type"] == 'INFZ':
-                section_info["data"] = parse_infz_block(f)
-            elif section_info["type"] == 'BBOX':
-                section_info["data"] = parse_bbox_block(f)
-            elif section_info["type"] == 'CHID':
-                section_info["data"] = parse_chid_block(f)
-            elif section_info["type"] == 'JNTV':
-                section_info["data"] = parse_jntv_block(f)
-            elif section_info["type"] == 'MAT6':
-                section_info["data"] = parse_mat6_block(f)
-            elif section_info["type"] == 'BON3':
-                section_info["data"] = parse_bon3_block(f)
-            elif section_info["type"] == 'VPAX':
-                print("Processing section {0}".format(info_section))
-                section_info["data"], mesh_data = parse_vpax_block(f, trim_for_gpu = trim_for_gpu)
-                meshes.append({'name': info_section, 'meshes': mesh_data})
-            contents.append(section_info)
-            f.seek(section_info["section_start_offset"] + section_info["size"], 0) # Move forward to the next section
-    it3_json_filename = it3_name[:-4] + '/container_info.json'
+                f.seek(size,1)
+            section_info.append(section)
+        if len(texture_data) > 0:
+            texture = dds_header(ihdr[0]['data']['dim1'], ihdr[0]['data']['dim2'], len(texture_data)) +\
+                unswizzle(texture_data, ihdr[0]['data']['dim1'], ihdr[0]['data']['dim2'], 16)
+    return(section_info, texture)
+
+def process_it3 (it3_name, complete_maps = False, trim_for_gpu = False, overwrite = False):
     if os.path.exists(it3_name[:-4]) and (os.path.isdir(it3_name[:-4])) and (overwrite == False):
         if str(input(it3_name[:-4] + " folder exists! Overwrite? (y/N) ")).lower()[0:1] == 'y':
             overwrite = True
     if (overwrite == True) or not os.path.exists(it3_name[:-4]):
+        with open(it3_name, 'rb') as f:
+            print("Processing {0}".format(it3_name))
+            file_length = f.seek(0,2)
+            f.seek(0,0)
+            contents = []
+            info_section = ''
+            meshes = []
+            textures = []
+            while f.tell() < file_length:
+                current_offset = f.tell()
+                section_info = {}
+                section_info["type"] = f.read(4).decode('ASCII')
+                section_info["size"], = struct.unpack("<I",f.read(4))
+                section_info["section_start_offset"] = f.tell()
+                if section_info["type"] == 'INFO':
+                    section_info["data"] = parse_info_block(f)
+                    info_section = section_info["data"]["name"]
+                else:
+                    section_info["info_name"] = info_section
+                if section_info["type"] == 'RTY2':
+                    section_info["data"] = parse_rty2_block(f)
+                elif section_info["type"] == 'LIG3':
+                    section_info["data"] = parse_lig3_block(f)
+                elif section_info["type"] == 'INFZ':
+                    section_info["data"] = parse_infz_block(f)
+                elif section_info["type"] == 'BBOX':
+                    section_info["data"] = parse_bbox_block(f)
+                elif section_info["type"] == 'CHID':
+                    section_info["data"] = parse_chid_block(f)
+                elif section_info["type"] == 'JNTV':
+                    section_info["data"] = parse_jntv_block(f)
+                elif section_info["type"] == 'MAT6':
+                    section_info["data"] = parse_mat6_block(f)
+                elif section_info["type"] == 'BON3':
+                    section_info["data"] = parse_bon3_block(f)
+                elif section_info["type"] == 'VPAX':
+                    print("Processing section {0}".format(info_section))
+                    section_info["data"], mesh_data = parse_vpax_block(f, trim_for_gpu = trim_for_gpu)
+                    meshes.append({'name': info_section, 'meshes': mesh_data})
+                elif section_info["type"] == 'TEXI':
+                    section_info['texture_name'] = f.read(36).split(b'\x00')[0].decode('ASCII')
+                    print("Processing texture {0}".format(section_info['texture_name']))
+                    section_info["data"], texture = parse_texi_block(f)
+                    textures.append({'name': section_info['texture_name'], 'texture': texture})
+                contents.append(section_info)
+                f.seek(section_info["section_start_offset"] + section_info["size"], 0) # Move forward to the next section
         if not os.path.exists(it3_name[:-4]):
             os.mkdir(it3_name[:-4])
-        with open(it3_json_filename, 'wb') as f:
+        with open(it3_name[:-4] + '/container_info.json', 'wb') as f:
             f.write(json.dumps(contents, indent=4).encode("utf-8"))
+        if not os.path.exists(it3_name[:-4] + '/meshes'):
+            os.mkdir(it3_name[:-4] + '/meshes')
         for i in range(len(meshes)):
             for j in range(len(meshes[i]["meshes"])):
                 bone_section = [x for x in contents if x['type'] == 'BON3' and x['info_name'] == meshes[i]["name"]]
@@ -354,8 +464,13 @@ def process_it3 (it3_name, complete_maps = False, trim_for_gpu = False, overwrit
                 else:
                     node_list = False
                 write_fmt_ib_vb(meshes[i]["meshes"][j], it3_name[:-4] +\
-                    '/{0}_{1}_{2:02d}'.format(i, meshes[i]["name"], j),\
+                    '/meshes/{0}_{1:02d}'.format(meshes[i]["name"], j),\
                     node_list = node_list, complete_maps = complete_maps)
+        if not os.path.exists(it3_name[:-4] + '/textures'):
+            os.mkdir(it3_name[:-4] + '/textures')
+        for i in range(len(textures)):
+            with open(it3_name[:-4] + '/textures/{0}.dds'.format(textures[i]["name"]), 'wb') as f:
+                f.write(textures[i]["texture"])
     return
 
 if __name__ == "__main__":
