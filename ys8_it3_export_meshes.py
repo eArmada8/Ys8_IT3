@@ -108,9 +108,8 @@ def parse_data_block (f, block_size, is_compressed):
             if (current_byte1 == 0):
                 contents += f.read(current_byte2)
             else:
-                start_idx = len(contents) - 1 - current_byte2
-                for i in range(start_idx, start_idx + current_byte1):
-                    contents += contents[i:i+1]
+                contents += b''.join([contents[-(current_byte2+1):]\
+                    for x in range((current_byte1 // (current_byte2+1)) + 1)])[0:current_byte1]
                 contents += f.read(1)
     else:
         contents = f.read(block_size - 4)
