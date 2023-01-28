@@ -14,54 +14,55 @@ import struct, base64, io, json, os, sys, glob
 from itertools import chain
 from lib_fmtibvb import *
 
-def make_160_fmt():
-    return({'stride': '160', 'topology': 'trianglelist', 'format': 'DXGI_FORMAT_R16_UINT',\
-        'elements': [{'id': '0', 'SemanticName': 'POSITION', 'SemanticIndex': '0',\
-        'Format': 'R32G32B32A32_FLOAT', 'InputSlot': '0', 'AlignedByteOffset': '0',\
-        'InputSlotClass': 'per-vertex', 'InstanceDataStepRate': '0'}, {'id': '1',\
-        'SemanticName': 'UNKNOWN', 'SemanticIndex': '0', 'Format': 'R32G32B32A32_FLOAT',\
-        'InputSlot': '0', 'AlignedByteOffset': '16', 'InputSlotClass': 'per-vertex',\
-        'InstanceDataStepRate': '0'}, {'id': '2', 'SemanticName': 'UNKNOWN', 'SemanticIndex': '1',\
-        'Format': 'R32G32B32A32_FLOAT', 'InputSlot': '0', 'AlignedByteOffset': '32',\
-        'InputSlotClass': 'per-vertex', 'InstanceDataStepRate': '0'}, {'id': '3',\
-        'SemanticName': 'UNKNOWN', 'SemanticIndex': '2', 'Format': 'R32G32B32A32_FLOAT',\
-        'InputSlot': '0', 'AlignedByteOffset': '48', 'InputSlotClass': 'per-vertex',\
-        'InstanceDataStepRate': '0'}, {'id': '4', 'SemanticName': 'NORMAL', 'SemanticIndex': '0',\
-        'Format': 'R8G8B8A8_SNORM', 'InputSlot': '0', 'AlignedByteOffset': '64',\
-        'InputSlotClass': 'per-vertex', 'InstanceDataStepRate': '0'}, {'id': '5',\
-        'SemanticName': 'UNKNOWN', 'SemanticIndex': '3', 'Format': 'R8G8B8A8_SNORM',\
-        'InputSlot': '0', 'AlignedByteOffset': '68', 'InputSlotClass': 'per-vertex',\
-        'InstanceDataStepRate': '0'}, {'id': '6', 'SemanticName': 'COLOR', 'SemanticIndex': '0',\
-        'Format': 'R8G8B8A8_UNORM', 'InputSlot': '0', 'AlignedByteOffset': '72',\
-        'InputSlotClass': 'per-vertex', 'InstanceDataStepRate': '0'}, {'id': '7',\
-        'SemanticName': 'COLOR', 'SemanticIndex': '1', 'Format': 'R8G8B8A8_UNORM',\
-        'InputSlot': '0', 'AlignedByteOffset': '76', 'InputSlotClass': 'per-vertex',\
-        'InstanceDataStepRate': '0'}, {'id': '8', 'SemanticName': 'TEXCOORD', 'SemanticIndex': '0',\
-        'Format': 'R32G32_FLOAT', 'InputSlot': '0', 'AlignedByteOffset': '80',\
-        'InputSlotClass': 'per-vertex', 'InstanceDataStepRate': '0'}, {'id': '9',\
-        'SemanticName': 'UNKNOWN', 'SemanticIndex': '4', 'Format': 'R32G32_FLOAT',\
-        'InputSlot': '0', 'AlignedByteOffset': '88', 'InputSlotClass': 'per-vertex',\
-        'InstanceDataStepRate': '0'}, {'id': '10', 'SemanticName': 'TEXCOORD', 'SemanticIndex': '1',\
-        'Format': 'R32G32_FLOAT', 'InputSlot': '0', 'AlignedByteOffset': '96',\
-        'InputSlotClass': 'per-vertex', 'InstanceDataStepRate': '0'}, {'id': '11',\
-        'SemanticName': 'UNKNOWN', 'SemanticIndex': '5', 'Format': 'R32G32_FLOAT',\
-        'InputSlot': '0', 'AlignedByteOffset': '104', 'InputSlotClass': 'per-vertex',\
-        'InstanceDataStepRate': '0'}, {'id': '12', 'SemanticName': 'UNKNOWN', 'SemanticIndex': '6',\
-        'Format': 'R32G32B32A32_FLOAT', 'InputSlot': '0', 'AlignedByteOffset': '112',\
-        'InputSlotClass': 'per-vertex', 'InstanceDataStepRate': '0'}, {'id': '13',\
-        'SemanticName': 'UNKNOWN', 'SemanticIndex': '7', 'Format': 'R32G32B32A32_FLOAT',\
-        'InputSlot': '0', 'AlignedByteOffset': '128', 'InputSlotClass': 'per-vertex',\
-        'InstanceDataStepRate': '0'}, {'id': '14', 'SemanticName': 'BLENDWEIGHTS', 'SemanticIndex': '0',\
-        'Format': 'R8G8B8A8_UNORM', 'InputSlot': '0', 'AlignedByteOffset': '144',\
-        'InputSlotClass': 'per-vertex', 'InstanceDataStepRate': '0'}, {'id': '15',\
-        'SemanticName': 'UNKNOWN', 'SemanticIndex': '8', 'Format': 'R8G8B8A8_UNORM',\
-        'InputSlot': '0', 'AlignedByteOffset': '148', 'InputSlotClass': 'per-vertex',\
-        'InstanceDataStepRate': '0'}, {'id': '16', 'SemanticName': 'BLENDINDICES', 'SemanticIndex': '0',\
-        'Format': 'R8G8B8A8_UINT', 'InputSlot': '0', 'AlignedByteOffset': '152',\
-        'InputSlotClass': 'per-vertex', 'InstanceDataStepRate': '0'}, {'id': '17',\
-        'SemanticName': 'UNKNOWN', 'SemanticIndex': '9', 'Format': 'R8G8B8A8_UINT',\
-        'InputSlot': '0', 'AlignedByteOffset': '156', 'InputSlotClass': 'per-vertex',\
-        'InstanceDataStepRate': '0'}]})
+def make_fmt(mask, game_version = 1):
+    fmt = {'stride': '0', 'topology': 'trianglelist', 'format':\
+        "DXGI_FORMAT_R{0}_UINT".format([16,32][game_version-1]), 'elements': []}
+    element_id, stride = 0, 0
+    semantic_index = {'COLOR': 0, 'TEXCOORD': 0, 'UNKNOWN': 0} # Counters for multiple indicies
+    elements = []
+    for i in range(16):
+        if mask & 1 << i:
+            # I think order matters in this dict, so we will define the entire structure with default values
+            element = {'id': '{0}'.format(element_id), 'SemanticName': '', 'SemanticIndex': '0',\
+                'Format': '', 'InputSlot': '0', 'AlignedByteOffset': '',\
+                'InputSlotClass': 'per-vertex', 'InstanceDataStepRate': '0'}
+            if i == 0:
+                element['SemanticName'] = 'POSITION'
+                element['Format'] = 'R32G32B32A32_FLOAT'
+            elif i == 4:
+                element['SemanticName'] = 'NORMAL'
+                element['Format'] = 'R8G8B8A8_SNORM'
+            elif i in [6,7]:
+                element['SemanticName'] = 'COLOR'
+                element['SemanticIndex'] = str(semantic_index['COLOR'])
+                element['Format'] = 'R8G8B8A8_UNORM'
+                semantic_index['COLOR'] += 1
+            elif i == [8,9]:
+                element['SemanticName'] = 'TEXCOORD'
+                element['SemanticIndex'] = str(semantic_index['TEXCOORD'])
+                element['Format'] = 'R32G32B32A32_FLOAT' #Actually R32G32 but Blender can ignore the padding
+                semantic_index['TEXCOORD'] += 1
+            elif i == 12:
+                element['SemanticName'] = 'BLENDWEIGHTS'
+                element['Format'] = 'R8G8B8A8_UNORM'
+            elif i == 14:
+                element['SemanticName'] = 'BLENDINDICES'
+                element['Format'] = 'R8G8B8A8_UINT'
+            else:
+                element['SemanticName'] = 'UNKNOWN'
+                element['SemanticIndex'] = str(semantic_index['UNKNOWN'])
+                if i & 0xF0F0:
+                    element['Format'] = 'R8G8B8A8_UINT'
+                else:
+                    element['Format'] = 'R32G32B32A32_UINT'
+                semantic_index['UNKNOWN'] += 1
+            element['AlignedByteOffset'] = str(stride)
+            stride += {True: 16, False: 4}[not (1<<i & 0xF0F0)] # 0-3 and 8-11 are stride 16, 4-7 and 12-15 are stride 4
+            element_id += 1
+            elements.append(element)
+    fmt['stride'] = str(stride)
+    fmt['elements'] = elements
+    return(fmt)
 
 def make_88_fmt():
     return({'stride': '88', 'topology': 'trianglelist', 'format': 'DXGI_FORMAT_R32_UINT',\
@@ -82,19 +83,15 @@ def make_88_fmt():
         'SemanticName': 'COLOR', 'SemanticIndex': '1', 'Format': 'R8G8B8A8_UNORM',\
         'InputSlot': '0', 'AlignedByteOffset': '44', 'InputSlotClass': 'per-vertex',\
         'InstanceDataStepRate': '0'}, {'id': '6', 'SemanticName': 'TEXCOORD',\
-        'SemanticIndex': '0', 'Format': 'R32G32_FLOAT', 'InputSlot': '0',\
+        'SemanticIndex': '0', 'Format': 'R32G32B32A32_FLOAT', 'InputSlot': '0',\
         'AlignedByteOffset': '48', 'InputSlotClass': 'per-vertex',\
-        'InstanceDataStepRate': '0'}, {'id': '7', 'SemanticName': 'UNKNOWN',\
-        'SemanticIndex': '2', 'Format': 'R32G32_FLOAT', 'InputSlot': '0',\
-        'AlignedByteOffset': '56', 'InputSlotClass': 'per-vertex', 'InstanceDataStepRate': '0'},\
-        {'id': '8', 'SemanticName': 'TEXCOORD', 'SemanticIndex': '1', 'Format': 'R32G32_FLOAT',\
-        'InputSlot': '0', 'AlignedByteOffset': '64', 'InputSlotClass': 'per-vertex',\
-        'InstanceDataStepRate': '0'}, {'id': '9', 'SemanticName': 'UNKNOWN', 'SemanticIndex': '3',\
-        'Format': 'R32G32_FLOAT', 'InputSlot': '0', 'AlignedByteOffset': '72',\
-        'InputSlotClass': 'per-vertex', 'InstanceDataStepRate': '0'}, {'id': '10',\
-        'SemanticName': 'BLENDWEIGHTS', 'SemanticIndex': '0', 'Format': 'R8G8B8A8_UNORM',\
-        'InputSlot': '0', 'AlignedByteOffset': '80', 'InputSlotClass': 'per-vertex',\
-        'InstanceDataStepRate': '0'}, {'id': '11', 'SemanticName': 'BLENDINDICES',\
+        'InstanceDataStepRate': '0'}, {'id': '7', 'SemanticName': 'TEXCOORD',\
+        'SemanticIndex': '1', 'Format': 'R32G32B32A32_FLOAT', 'InputSlot': '0',\
+        'AlignedByteOffset': '64', 'InputSlotClass': 'per-vertex',\
+        'InstanceDataStepRate': '0'}, {'id': '8', 'SemanticName': 'BLENDWEIGHTS',\
+        'SemanticIndex': '0', 'Format': 'R8G8B8A8_UNORM', 'InputSlot': '0',\
+        'AlignedByteOffset': '80', 'InputSlotClass': 'per-vertex',\
+        'InstanceDataStepRate': '0'}, {'id': '9', 'SemanticName': 'BLENDINDICES',\
         'SemanticIndex': '0', 'Format': 'R8G8B8A8_UINT', 'InputSlot': '0',\
         'AlignedByteOffset': '84', 'InputSlotClass': 'per-vertex', 'InstanceDataStepRate': '0'}]})
 
@@ -227,9 +224,6 @@ def parse_vpax_block (f, trim_for_gpu = False, game_version = 1):
     indices = []
     vertices = []
     mesh_buffers = []
-    fmt_struct = make_160_fmt()
-    if game_version == 2:
-        fmt_struct["format"] = "DXGI_FORMAT_R32_UINT"
     for i in range(count):
         print("Decompressing vertex buffer {0}".format(i))
         size, = struct.unpack("<I", f.read(4))
@@ -248,32 +242,18 @@ def parse_vpax_block (f, trim_for_gpu = False, game_version = 1):
                 'v0': struct.unpack("<4f", vb_stream.read(16)), 'v1': struct.unpack("<4f", vb_stream.read(16)),\
                 'v2': struct.unpack("<4f", vb_stream.read(16)), 'uint0': struct.unpack("<77I", vb_stream.read(308))}
             if mesh["header"]["name"] == 'VPAC':
-                mask, count, uVar1, iVar4, local_c = mesh["header"]["uint0"][2], 0x10, 1, 0, 0
-                while True: # Measure total stride (iVar4) by looking at the bits in the mask
-                    if ((mask & uVar1) != 0):
-                        if uVar1 in [1, 2, 4, 8, 0x100, 0x200, 0x400, 0x800]:
-                            iVar4 += 0x10 # Add 16 to the stride if bit is 1
-                            local_c += 1
-                        elif uVar1 in [0x10, 0x20, 0x40, 0x80, 0x1000, 0x2000, 0x4000, 0x8000]:
-                            iVar4 += 4 # Add 4 to the stride if bit is 1
-                            local_c += 1
-                    uVar1 = uVar1 << 1 | int(uVar1 <0) # Bit-shifting 1, 2, 4, 8, 16, 32, etc total 16 times
-                    count -= 1
-                    if count == 0:
-                        break
-                count1 = local_c # Number of positive bits
-                count2 = mesh["header"]["uint0"][0] # Vertex count
+                fmt_struct = make_fmt(mesh["header"]["uint0"][2])
                 mesh["material_id"] = mesh["header"]["uint0"][68]
-                mesh["block_size"] = iVar4 # Not sure why we did this, since it seems stride is always 160?
+                mesh["block_size"] = fmt_struct['stride']
                 mesh["vertex_count"] = mesh["header"]["uint0"][0]
                 #vb = vb_stream.read(mesh["block_size"] * mesh["vertex_count"])
                 vb = read_vb_stream(vb_stream.read(), fmt_struct, e = '<')
                 ib = read_ib_stream(indices[i], fmt_struct, e = '<')
-                if trim_for_gpu == False:
-                    mesh_buffers.append({'fmt': fmt_struct, 'ib': ib, 'vb': vb})
-                else:
+                if trim_for_gpu == True and fmt_struct['stride'] == '160':
                     mesh_buffers.append({'fmt': make_88_fmt(), 'ib': ib,\
-                        'vb': [vb[i] for i in [0,1,4,5,6,7,8,9,10,11,14,16]]})
+                        'vb': [vb[i] for i in [0,1,4,5,6,7,8,9,12,14]]})
+                else:
+                    mesh_buffers.append({'fmt': fmt_struct, 'ib': ib, 'vb': vb})
             section_info.append(mesh)
     return(section_info, mesh_buffers)
 
