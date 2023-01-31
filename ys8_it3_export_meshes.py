@@ -14,6 +14,9 @@ import struct, base64, io, json, os, sys, glob
 from itertools import chain
 from lib_fmtibvb import *
 
+# This script outputs non-empty vgmaps by default, change the following line to True to change
+complete_vgmaps_default = False
+
 def make_fmt(mask, game_version = 1):
     fmt = {'stride': '0', 'topology': 'trianglelist', 'format':\
         "DXGI_FORMAT_R{0}_UINT".format([16,32][game_version-1]), 'elements': []}
@@ -413,7 +416,7 @@ def parse_it3 (f):
         f.seek(section_info["section_start_offset"] + section_info["size"], 0) # Move forward to the next section
     return(contents)
 
-def process_it3 (it3_name, complete_maps = False, trim_for_gpu = False, overwrite = False):
+def process_it3 (it3_name, complete_maps = complete_vgmaps_default, trim_for_gpu = False, overwrite = False):
     if os.path.exists(it3_name[:-4]) and (os.path.isdir(it3_name[:-4])) and (overwrite == False):
         if str(input(it3_name[:-4] + " folder exists! Overwrite? (y/N) ")).lower()[0:1] == 'y':
             overwrite = True
@@ -468,13 +471,20 @@ if __name__ == "__main__":
     if len(sys.argv) > 1:
         import argparse
         parser = argparse.ArgumentParser()
-        parser.add_argument('-c', '--completemaps', help="Provide vgmaps with entire mesh skeleton", action="store_true")
+        if complete_vgmaps_default == True:
+            parser.add_argument('-p', '--partialmaps', help="Provide vgmaps with non-empty groups only", action="store_false")
+        else:
+            parser.add_argument('-c', '--completemaps', help="Provide vgmaps with entire mesh skeleton", action="store_true")
         parser.add_argument('-t', '--trim_for_gpu', help="Trim vertex buffer for GPU injection (3DMigoto)", action="store_true")
         parser.add_argument('-o', '--overwrite', help="Overwrite existing files", action="store_true")
         parser.add_argument('it3_filename', help="Name of it3 file to export from (required).")
         args = parser.parse_args()
+        if complete_vgmaps_default == True:
+            complete_maps = args.partialmaps
+        else:
+            complete_maps = args.completemaps
         if os.path.exists(args.it3_filename) and args.it3_filename[-4:].lower() == '.it3':
-            process_it3(args.it3_filename, complete_maps = args.completemaps, trim_for_gpu = args.trim_for_gpu, overwrite = args.overwrite)
+            process_it3(args.it3_filename, complete_maps = complete_maps, trim_for_gpu = args.trim_for_gpu, overwrite = args.overwrite)
     else:
         it3_files = glob.glob('*.it3')
         for i in range(len(it3_files)):
