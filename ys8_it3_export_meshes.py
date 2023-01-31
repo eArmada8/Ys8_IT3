@@ -377,6 +377,42 @@ def parse_texi_block (f):
                 unswizzle(texture_data, ihdr[0]['data']['dim1'], ihdr[0]['data']['dim2'], 16)
     return(section_info, texture)
 
+def parse_it3 (f):
+    file_length = f.seek(0,2)
+    f.seek(0,0)
+    contents = []
+    info_section = ''
+    while f.tell() < file_length:
+        current_offset = f.tell()
+        section_info = {}
+        section_info["type"] = f.read(4).decode('ASCII')
+        section_info["size"], = struct.unpack("<I",f.read(4))
+        section_info["section_start_offset"] = f.tell()
+        if section_info["type"] == 'INFO':
+            section_info["data"] = parse_info_block(f)
+            info_section = section_info["data"]["name"]
+        else:
+            section_info["info_name"] = info_section
+        if section_info["type"] == 'RTY2':
+            section_info["data"] = parse_rty2_block(f)
+        elif section_info["type"] == 'LIG3':
+            section_info["data"] = parse_lig3_block(f)
+        elif section_info["type"] == 'INFZ':
+            section_info["data"] = parse_infz_block(f)
+        elif section_info["type"] == 'BBOX':
+            section_info["data"] = parse_bbox_block(f)
+        elif section_info["type"] == 'CHID':
+            section_info["data"] = parse_chid_block(f)
+        elif section_info["type"] == 'JNTV':
+            section_info["data"] = parse_jntv_block(f)
+        elif section_info["type"] == 'MAT6':
+            section_info["data"] = parse_mat6_block(f)
+        elif section_info["type"] == 'BON3':
+            section_info["data"] = parse_bon3_block(f)
+        contents.append(section_info)
+        f.seek(section_info["section_start_offset"] + section_info["size"], 0) # Move forward to the next section
+    return(contents)
+
 def process_it3 (it3_name, complete_maps = False, trim_for_gpu = False, overwrite = False):
     if os.path.exists(it3_name[:-4]) and (os.path.isdir(it3_name[:-4])) and (overwrite == False):
         if str(input(it3_name[:-4] + " folder exists! Overwrite? (y/N) ")).lower()[0:1] == 'y':
@@ -384,59 +420,31 @@ def process_it3 (it3_name, complete_maps = False, trim_for_gpu = False, overwrit
     if (overwrite == True) or not os.path.exists(it3_name[:-4]):
         with open(it3_name, 'rb') as f:
             print("Processing {0}".format(it3_name))
-            file_length = f.seek(0,2)
-            f.seek(0,0)
-            contents = []
-            info_section = ''
+            it3_contents = parse_it3(f)
+            if not os.path.exists(it3_name[:-4]):
+                os.mkdir(it3_name[:-4])
+            vpax_blocks = [i for i in range(len(it3_contents)) if it3_contents[i]['type'] == 'VPAX']
             meshes = []
+            for i in range(len(vpax_blocks)):
+                print("Processing section {0}".format(it3_contents[vpax_blocks[i]]['info_name']))
+                f.seek(it3_contents[vpax_blocks[i]]['section_start_offset'])
+                it3_contents[vpax_blocks[i]]["data"], mesh_data = parse_vpax_block(f, trim_for_gpu = trim_for_gpu)
+                meshes.append({'name': it3_contents[vpax_blocks[i]]['info_name'], 'meshes': mesh_data})
+            texi_blocks = [i for i in range(len(it3_contents)) if it3_contents[i]['type'] == 'TEXI']
             textures = []
-            while f.tell() < file_length:
-                current_offset = f.tell()
-                section_info = {}
-                section_info["type"] = f.read(4).decode('ASCII')
-                section_info["size"], = struct.unpack("<I",f.read(4))
-                section_info["section_start_offset"] = f.tell()
-                if section_info["type"] == 'INFO':
-                    section_info["data"] = parse_info_block(f)
-                    info_section = section_info["data"]["name"]
-                else:
-                    section_info["info_name"] = info_section
-                if section_info["type"] == 'RTY2':
-                    section_info["data"] = parse_rty2_block(f)
-                elif section_info["type"] == 'LIG3':
-                    section_info["data"] = parse_lig3_block(f)
-                elif section_info["type"] == 'INFZ':
-                    section_info["data"] = parse_infz_block(f)
-                elif section_info["type"] == 'BBOX':
-                    section_info["data"] = parse_bbox_block(f)
-                elif section_info["type"] == 'CHID':
-                    section_info["data"] = parse_chid_block(f)
-                elif section_info["type"] == 'JNTV':
-                    section_info["data"] = parse_jntv_block(f)
-                elif section_info["type"] == 'MAT6':
-                    section_info["data"] = parse_mat6_block(f)
-                elif section_info["type"] == 'BON3':
-                    section_info["data"] = parse_bon3_block(f)
-                elif section_info["type"] == 'VPAX':
-                    print("Processing section {0}".format(info_section))
-                    section_info["data"], mesh_data = parse_vpax_block(f, trim_for_gpu = trim_for_gpu)
-                    meshes.append({'name': info_section, 'meshes': mesh_data})
-                elif section_info["type"] == 'TEXI':
-                    section_info['texture_name'] = f.read(36).split(b'\x00')[0].decode('ASCII')
-                    print("Processing texture {0}".format(section_info['texture_name']))
-                    section_info["data"], texture = parse_texi_block(f)
-                    textures.append({'name': section_info['texture_name'], 'texture': texture})
-                contents.append(section_info)
-                f.seek(section_info["section_start_offset"] + section_info["size"], 0) # Move forward to the next section
-        if not os.path.exists(it3_name[:-4]):
-            os.mkdir(it3_name[:-4])
+            for i in range(len(texi_blocks)):
+                f.seek(it3_contents[texi_blocks[i]]['section_start_offset'])
+                it3_contents[texi_blocks[i]]['texture_name'] = f.read(36).split(b'\x00')[0].decode('ASCII')
+                print("Processing texture {0}".format(it3_contents[texi_blocks[i]]['texture_name']))
+                it3_contents[texi_blocks[i]]["data"], texture = parse_texi_block(f)
+                textures.append({'name': it3_contents[texi_blocks[i]]['texture_name'], 'texture': texture})
         with open(it3_name[:-4] + '/container_info.json', 'wb') as f:
-            f.write(json.dumps(contents, indent=4).encode("utf-8"))
+            f.write(json.dumps(it3_contents, indent=4).encode("utf-8"))
         if not os.path.exists(it3_name[:-4] + '/meshes'):
             os.mkdir(it3_name[:-4] + '/meshes')
         for i in range(len(meshes)):
             for j in range(len(meshes[i]["meshes"])):
-                bone_section = [x for x in contents if x['type'] == 'BON3' and x['info_name'] == meshes[i]["name"]]
+                bone_section = [x for x in it3_contents if x['type'] == 'BON3' and x['info_name'] == meshes[i]["name"]]
                 if len(bone_section) > 0:
                     # For some reason Ys VIII starts numbering at 1 (root is node 1, not node 0)
                     node_list = [meshes[i]["name"]] + bone_section[0]['data']['joints']
