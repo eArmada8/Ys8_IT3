@@ -260,12 +260,30 @@ def parse_vpax_block (f, trim_for_gpu = False, game_version = 1):
             section_info.append(mesh)
     return(section_info, mesh_buffers)
 
-def write_fmt_ib_vb (mesh_buffer, filename, node_list = False, complete_maps = False):
-    print("Processing submesh {0}...".format(filename))
+def obtain_mesh_data (f, it3_contents, it3_filename, trim_for_gpu = False):
+    vpax_blocks = [i for i in range(len(it3_contents)) if it3_contents[i]['type'] == 'VPAX']
+    meshes = []
+    for i in range(len(vpax_blocks)):
+        print("Processing section {0}".format(it3_contents[vpax_blocks[i]]['info_name']))
+        f.seek(it3_contents[vpax_blocks[i]]['section_start_offset'])
+        it3_contents[vpax_blocks[i]]["data"], mesh_data = parse_vpax_block(f, trim_for_gpu = trim_for_gpu)
+        bone_section = [x for x in it3_contents if x['type'] == 'BON3'\
+            and x['info_name'] == it3_contents[vpax_blocks[i]]['info_name']]
+        if len(bone_section) > 0:
+            # For some reason Ys VIII starts numbering at 1 (root is node 1, not node 0)
+            node_list = [it3_filename[:-4]] + bone_section[0]['data']['joints']
+        else:
+            node_list = []
+        meshes.append({'name': it3_contents[vpax_blocks[i]]['info_name'], 'meshes': mesh_data,\
+            'node_list': node_list})
+    return(it3_contents, meshes)
+
+def write_fmt_ib_vb (mesh_buffer, filename, node_list = [], complete_maps = False):
+    print("Writing submesh {0}".format(filename))
     write_fmt(mesh_buffer['fmt'], filename + '.fmt')
     write_ib(mesh_buffer['ib'], filename +  '.ib', mesh_buffer['fmt'])
     write_vb(mesh_buffer['vb'], filename +  '.vb', mesh_buffer['fmt'])
-    if not node_list == False:
+    if len(node_list) > 0:
         # Find vertex groups referenced by vertices so that we can cull the empty ones
         active_nodes = list(set(list(chain.from_iterable([x["Buffer"] for x in mesh_buffer["vb"] \
             if x["SemanticName"] == 'BLENDINDICES'][0]))))
@@ -380,6 +398,17 @@ def parse_texi_block (f):
                 unswizzle(texture_data, ihdr[0]['data']['dim1'], ihdr[0]['data']['dim2'], 16)
     return(section_info, texture)
 
+def obtain_textures (f, it3_contents):
+    texi_blocks = [i for i in range(len(it3_contents)) if it3_contents[i]['type'] == 'TEXI']
+    textures = []
+    for i in range(len(texi_blocks)):
+        f.seek(it3_contents[texi_blocks[i]]['section_start_offset'])
+        it3_contents[texi_blocks[i]]['texture_name'] = f.read(36).split(b'\x00')[0].decode('ASCII')
+        print("Processing texture {0}".format(it3_contents[texi_blocks[i]]['texture_name']))
+        it3_contents[texi_blocks[i]]["data"], texture = parse_texi_block(f)
+        textures.append({'name': it3_contents[texi_blocks[i]]['texture_name'], 'texture': texture})
+    return(it3_contents, textures)
+
 def parse_it3 (f):
     file_length = f.seek(0,2)
     f.seek(0,0)
@@ -417,47 +446,29 @@ def parse_it3 (f):
     return(contents)
 
 def process_it3 (it3_filename, complete_maps = complete_vgmaps_default, trim_for_gpu = False, overwrite = False):
+    print("Processing {0}".format(it3_filename))
     if os.path.exists(it3_filename[:-4]) and (os.path.isdir(it3_filename[:-4])) and (overwrite == False):
         if str(input(it3_filename[:-4] + " folder exists! Overwrite? (y/N) ")).lower()[0:1] == 'y':
             overwrite = True
     if (overwrite == True) or not os.path.exists(it3_filename[:-4]):
         with open(it3_filename, 'rb') as f:
-            print("Processing {0}".format(it3_filename))
             it3_contents = parse_it3(f)
+            it3_contents, meshes = obtain_mesh_data(f, it3_contents, it3_filename, trim_for_gpu = trim_for_gpu)
+            it3_contents, textures = obtain_textures(f, it3_contents)
             if not os.path.exists(it3_filename[:-4]):
                 os.mkdir(it3_filename[:-4])
-            vpax_blocks = [i for i in range(len(it3_contents)) if it3_contents[i]['type'] == 'VPAX']
-            meshes = []
-            for i in range(len(vpax_blocks)):
-                print("Processing section {0}".format(it3_contents[vpax_blocks[i]]['info_name']))
-                f.seek(it3_contents[vpax_blocks[i]]['section_start_offset'])
-                it3_contents[vpax_blocks[i]]["data"], mesh_data = parse_vpax_block(f, trim_for_gpu = trim_for_gpu)
-                meshes.append({'name': it3_contents[vpax_blocks[i]]['info_name'], 'meshes': mesh_data})
-            texi_blocks = [i for i in range(len(it3_contents)) if it3_contents[i]['type'] == 'TEXI']
-            textures = []
-            for i in range(len(texi_blocks)):
-                f.seek(it3_contents[texi_blocks[i]]['section_start_offset'])
-                it3_contents[texi_blocks[i]]['texture_name'] = f.read(36).split(b'\x00')[0].decode('ASCII')
-                print("Processing texture {0}".format(it3_contents[texi_blocks[i]]['texture_name']))
-                it3_contents[texi_blocks[i]]["data"], texture = parse_texi_block(f)
-                textures.append({'name': it3_contents[texi_blocks[i]]['texture_name'], 'texture': texture})
         with open(it3_filename[:-4] + '/container_info.json', 'wb') as f:
             f.write(json.dumps(it3_contents, indent=4).encode("utf-8"))
         if not os.path.exists(it3_filename[:-4] + '/meshes'):
             os.mkdir(it3_filename[:-4] + '/meshes')
         for i in range(len(meshes)):
             for j in range(len(meshes[i]["meshes"])):
-                bone_section = [x for x in it3_contents if x['type'] == 'BON3' and x['info_name'] == meshes[i]["name"]]
-                if len(bone_section) > 0:
-                    # For some reason Ys VIII starts numbering at 1 (root is node 1, not node 0)
-                    node_list = [it3_filename[:-4]] + bone_section[0]['data']['joints']
-                else:
-                    node_list = False
                 write_fmt_ib_vb(meshes[i]["meshes"][j], it3_filename[:-4] +\
                     '/meshes/{0}_{1:02d}'.format(meshes[i]["name"], j),\
-                    node_list = node_list, complete_maps = complete_maps)
+                    node_list = meshes[i]["node_list"], complete_maps = complete_maps)
         if not os.path.exists(it3_filename[:-4] + '/textures'):
             os.mkdir(it3_filename[:-4] + '/textures')
+        print("Writing textures")
         for i in range(len(textures)):
             with open(it3_filename[:-4] + '/textures/{0}.dds'.format(textures[i]["name"]), 'wb') as f:
                 f.write(textures[i]["texture"])
