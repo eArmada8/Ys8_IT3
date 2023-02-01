@@ -416,16 +416,16 @@ def parse_it3 (f):
         f.seek(section_info["section_start_offset"] + section_info["size"], 0) # Move forward to the next section
     return(contents)
 
-def process_it3 (it3_name, complete_maps = complete_vgmaps_default, trim_for_gpu = False, overwrite = False):
-    if os.path.exists(it3_name[:-4]) and (os.path.isdir(it3_name[:-4])) and (overwrite == False):
-        if str(input(it3_name[:-4] + " folder exists! Overwrite? (y/N) ")).lower()[0:1] == 'y':
+def process_it3 (it3_filename, complete_maps = complete_vgmaps_default, trim_for_gpu = False, overwrite = False):
+    if os.path.exists(it3_filename[:-4]) and (os.path.isdir(it3_filename[:-4])) and (overwrite == False):
+        if str(input(it3_filename[:-4] + " folder exists! Overwrite? (y/N) ")).lower()[0:1] == 'y':
             overwrite = True
-    if (overwrite == True) or not os.path.exists(it3_name[:-4]):
-        with open(it3_name, 'rb') as f:
-            print("Processing {0}".format(it3_name))
+    if (overwrite == True) or not os.path.exists(it3_filename[:-4]):
+        with open(it3_filename, 'rb') as f:
+            print("Processing {0}".format(it3_filename))
             it3_contents = parse_it3(f)
-            if not os.path.exists(it3_name[:-4]):
-                os.mkdir(it3_name[:-4])
+            if not os.path.exists(it3_filename[:-4]):
+                os.mkdir(it3_filename[:-4])
             vpax_blocks = [i for i in range(len(it3_contents)) if it3_contents[i]['type'] == 'VPAX']
             meshes = []
             for i in range(len(vpax_blocks)):
@@ -441,25 +441,25 @@ def process_it3 (it3_name, complete_maps = complete_vgmaps_default, trim_for_gpu
                 print("Processing texture {0}".format(it3_contents[texi_blocks[i]]['texture_name']))
                 it3_contents[texi_blocks[i]]["data"], texture = parse_texi_block(f)
                 textures.append({'name': it3_contents[texi_blocks[i]]['texture_name'], 'texture': texture})
-        with open(it3_name[:-4] + '/container_info.json', 'wb') as f:
+        with open(it3_filename[:-4] + '/container_info.json', 'wb') as f:
             f.write(json.dumps(it3_contents, indent=4).encode("utf-8"))
-        if not os.path.exists(it3_name[:-4] + '/meshes'):
-            os.mkdir(it3_name[:-4] + '/meshes')
+        if not os.path.exists(it3_filename[:-4] + '/meshes'):
+            os.mkdir(it3_filename[:-4] + '/meshes')
         for i in range(len(meshes)):
             for j in range(len(meshes[i]["meshes"])):
                 bone_section = [x for x in it3_contents if x['type'] == 'BON3' and x['info_name'] == meshes[i]["name"]]
                 if len(bone_section) > 0:
                     # For some reason Ys VIII starts numbering at 1 (root is node 1, not node 0)
-                    node_list = [it3_name[:-4]] + bone_section[0]['data']['joints']
+                    node_list = [it3_filename[:-4]] + bone_section[0]['data']['joints']
                 else:
                     node_list = False
-                write_fmt_ib_vb(meshes[i]["meshes"][j], it3_name[:-4] +\
+                write_fmt_ib_vb(meshes[i]["meshes"][j], it3_filename[:-4] +\
                     '/meshes/{0}_{1:02d}'.format(meshes[i]["name"], j),\
                     node_list = node_list, complete_maps = complete_maps)
-        if not os.path.exists(it3_name[:-4] + '/textures'):
-            os.mkdir(it3_name[:-4] + '/textures')
+        if not os.path.exists(it3_filename[:-4] + '/textures'):
+            os.mkdir(it3_filename[:-4] + '/textures')
         for i in range(len(textures)):
-            with open(it3_name[:-4] + '/textures/{0}.dds'.format(textures[i]["name"]), 'wb') as f:
+            with open(it3_filename[:-4] + '/textures/{0}.dds'.format(textures[i]["name"]), 'wb') as f:
                 f.write(textures[i]["texture"])
     return
 
