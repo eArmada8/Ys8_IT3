@@ -450,7 +450,7 @@ def process_it3 (it3_name, complete_maps = complete_vgmaps_default, trim_for_gpu
                 bone_section = [x for x in it3_contents if x['type'] == 'BON3' and x['info_name'] == meshes[i]["name"]]
                 if len(bone_section) > 0:
                     # For some reason Ys VIII starts numbering at 1 (root is node 1, not node 0)
-                    node_list = [meshes[i]["name"]] + bone_section[0]['data']['joints']
+                    node_list = [it3_name[:-4]] + bone_section[0]['data']['joints']
                 else:
                     node_list = False
                 write_fmt_ib_vb(meshes[i]["meshes"][j], it3_name[:-4] +\
