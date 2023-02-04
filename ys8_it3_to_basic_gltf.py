@@ -80,6 +80,7 @@ def convert_submesh_for_gltf(submesh, flip_axis = True):
     need_index = ['WEIGHTS', 'JOINTS', 'COLOR', 'TEXCOORD']
     need_fewer_values = {'POSITION': 3, 'NORMAL': 3, 'TEXCOORD': 2}
     has_axes = ['POSITION', 'NORMAL']
+    normalize = ['NORMAL']
     truncated_dxgi = {2: 'R32G32_FLOAT', 3: 'R32G32B32_FLOAT'}
     for i in range(len(submesh['fmt']['elements'])):
         if not submesh['fmt']['elements'][i]['SemanticName'] == 'UNKNOWN':
@@ -96,12 +97,17 @@ def convert_submesh_for_gltf(submesh, flip_axis = True):
                 buffer = [x[0:need_fewer_values[new_element['SemanticName']]] for x in submesh['vb'][i]["Buffer"]]
                 if new_element['SemanticName'] in has_axes and flip_axis == True:
                     buffer = [[x[0],x[2],-x[1]] for x in buffer]
+                if new_element['SemanticName'] in normalize:
+                    buffer = [(x/numpy.linalg.norm(x)).tolist() for x in buffer]
                 new_vb.append({"SemanticName": submesh['vb'][i]["SemanticName"],\
                     "SemanticIndex": submesh['vb'][i]["SemanticIndex"],\
                     "Buffer": buffer})
             else:
                 dxgi_format = submesh['fmt']['elements'][i]['Format']
                 new_vb.append(submesh['vb'][i])
+            if new_element['SemanticName'] == 'WEIGHTS':
+                weight_sums = [sum(x) for x in new_vb[-1]["Buffer"]]
+                new_vb[-1]["Buffer"] = [[x/weight_sums[i] for x in new_vb[-1]["Buffer"][i]] for i in range(len(new_vb[-1]["Buffer"]))]
             new_info = convert_format_for_gltf(dxgi_format)
             new_element['Format'] = new_info['format']
             if new_element['SemanticName'] in need_index:
@@ -225,8 +231,9 @@ def write_glTF(filename, it3_contents, mesh_struct, skel_struct, flip_axis = Tru
             if has_skeleton:
                 inv_mtx_buffer = bytes()
                 for k in global_node_dict:
-                    inv_bind_mtx = numpy.linalg.inv(numpy.array(skel_struct[global_node_dict[k]]['matrix'])).tolist()
-                    inv_mtx_buffer += struct.pack("<16f", *[num for row in inv_bind_mtx for num in row])
+                    inv_bind_mtx = [num for row in numpy.linalg.inv(numpy.array(skel_struct[global_node_dict[k]]['matrix'])).tolist() for num in row]
+                    inv_bind_mtx = [round(x,15) for x in inv_bind_mtx]
+                    inv_mtx_buffer += struct.pack("<16f", *inv_bind_mtx)
                 gltf_data['skins'].append({"inverseBindMatrices": len(gltf_data['accessors']), "joints": list(global_node_dict.values())})
                 gltf_data['accessors'].append({"bufferView" : buffer_view,\
                     "componentType": 5126,\
