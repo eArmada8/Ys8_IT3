@@ -261,12 +261,13 @@ def parse_vpax_block (f, trim_for_gpu = False, game_version = 1):
     return(section_info, mesh_buffers)
 
 def obtain_mesh_data (f, it3_contents, it3_filename, trim_for_gpu = False):
-    vpax_blocks = [i for i in range(len(it3_contents)) if it3_contents[i]['type'] == 'VPAX']
+    vpax_blocks = [i for i in range(len(it3_contents)) if it3_contents[i]['type'] in ['VPAX', 'VP11']]
     meshes = []
     for i in range(len(vpax_blocks)):
         print("Processing section {0}".format(it3_contents[vpax_blocks[i]]['info_name']))
         f.seek(it3_contents[vpax_blocks[i]]['section_start_offset'])
-        it3_contents[vpax_blocks[i]]["data"], mesh_data = parse_vpax_block(f, trim_for_gpu = trim_for_gpu)
+        it3_contents[vpax_blocks[i]]["data"], mesh_data = parse_vpax_block(f, trim_for_gpu = trim_for_gpu,\
+            game_version = {'VPAX':1, 'VP11':2}[it3_contents[vpax_blocks[i]]['type']])
         bone_section = [x for x in it3_contents if x['type'] == 'BON3'\
             and x['info_name'] == it3_contents[vpax_blocks[i]]['info_name']]
         if len(bone_section) > 0:
