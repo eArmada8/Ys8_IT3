@@ -245,7 +245,7 @@ def parse_vpax_block (f, trim_for_gpu = False, game_version = 1):
                 'v0': struct.unpack("<4f", vb_stream.read(16)), 'v1': struct.unpack("<4f", vb_stream.read(16)),\
                 'v2': struct.unpack("<4f", vb_stream.read(16)), 'uint0': struct.unpack("<77I", vb_stream.read(308))}
             if mesh["header"]["name"] == 'VPAC':
-                fmt_struct = make_fmt(mesh["header"]["uint0"][2])
+                fmt_struct = make_fmt(mesh["header"]["uint0"][2], game_version = game_version)
                 mesh["material_id"] = mesh["header"]["uint0"][68]
                 mesh["block_size"] = fmt_struct['stride']
                 mesh["vertex_count"] = mesh["header"]["uint0"][0]
