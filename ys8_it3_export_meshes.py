@@ -400,11 +400,18 @@ def parse_texi_block (f):
     return(section_info, texture)
 
 def obtain_textures (f, it3_contents):
-    texi_blocks = [i for i in range(len(it3_contents)) if it3_contents[i]['type'] == 'TEXI']
+    texi_blocks = [i for i in range(len(it3_contents)) if it3_contents[i]['type'] in ['TEXI', 'TEX2']]
     textures = []
     for i in range(len(texi_blocks)):
         f.seek(it3_contents[texi_blocks[i]]['section_start_offset'])
-        it3_contents[texi_blocks[i]]['texture_name'] = f.read(36).split(b'\x00')[0].decode('ASCII')
+        if it3_contents[texi_blocks[i]]['type'] == 'TEXI':
+            it3_contents[texi_blocks[i]]['texture_name'] = f.read(36).split(b'\x00')[0].decode('ASCII')
+        else: #'TEX2'
+            f.seek(4,1) #unk int
+            name = f.read(1)
+            while not name[-1:] == b'\x00':
+                name += f.read(1)
+            it3_contents[texi_blocks[i]]['texture_name'] = name.rstrip(b'\x00').decode('ASCII')
         print("Processing texture {0}".format(it3_contents[texi_blocks[i]]['texture_name']))
         it3_contents[texi_blocks[i]]["data"], texture = parse_texi_block(f)
         textures.append({'name': it3_contents[texi_blocks[i]]['texture_name'], 'texture': texture})
@@ -464,14 +471,16 @@ def process_it3 (it3_filename, complete_maps = complete_vgmaps_default, trim_for
             os.mkdir(it3_filename[:-4] + '/meshes')
         for i in range(len(meshes)):
             for j in range(len(meshes[i]["meshes"])):
+                safe_filename = "".join([x if x not in "\/:*?<>|" else "_" for x in meshes[i]["name"]])
                 write_fmt_ib_vb(meshes[i]["meshes"][j], it3_filename[:-4] +\
-                    '/meshes/{0}_{1:02d}'.format(meshes[i]["name"], j),\
+                    '/meshes/{0}_{1:02d}'.format(safe_filename, j),\
                     node_list = meshes[i]["node_list"], complete_maps = complete_maps)
         if not os.path.exists(it3_filename[:-4] + '/textures'):
             os.mkdir(it3_filename[:-4] + '/textures')
         print("Writing textures")
         for i in range(len(textures)):
-            with open(it3_filename[:-4] + '/textures/{0}.dds'.format(textures[i]["name"]), 'wb') as f:
+            safe_filename = "".join([x if x not in "\/:*?<>|" else "_" for x in textures[i]["name"]])
+            with open(it3_filename[:-4] + '/textures/{0}.dds'.format(safe_filename), 'wb') as f:
                 f.write(textures[i]["texture"])
     return
 

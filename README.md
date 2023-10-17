@@ -1,5 +1,5 @@
-# Ys VIII IT3 mesh and texture export
-A script to get the mesh data and textures out of IT3 files, hopefully someday I will find a way to get both back into the IT3 file.  The mesh output is in .fmt/.vb/.ib files that are compatible with DarkStarSword Blender import plugin for 3DMigoto, textures are in DDS format, and metadata is in JSON format.
+# Ys VIII / IX IT3 mesh and texture export
+A script to get the mesh data and textures out of IT3 files, hopefully someday I will find a way to get both back into the IT3 file.  The mesh output is in .fmt/.vb/.ib files that are compatible with DarkStarSword Blender import plugin for 3DMigoto, textures are in DDS format, and metadata is in JSON format.  Tested with Ys VIII / IX models so far.
 
 ## Credits:
 99.9% of my understanding of the IT3 format comes from the reverse engineering work of TwnKey (github.com/TwnKey), and specifically [TwnKey's model dumper](https://github.com/TwnKey/IT3Dumper).
@@ -14,6 +14,7 @@ I am very thankful for TwnKey, uyjulian, DarkStarSword, and the Kiseki modding d
 4. ys8_it3_export_meshes.py is dependent on lib_fmtibvb.py, which must be in the same folder.  
 
 ## Usage:
+
 ### ys8_it3_export_meshes.py
 Double click the python script and it will search the current folder for all .it3 files and export the meshes and textures into a folder with the same name as the it3 file.  Additionally, it will output a very incomplete JSON file with metadata, which I am using to understand this format further (there is no practical use just yet).
 
@@ -44,10 +45,10 @@ It will search the current folder for it3 files and convert them all, unless you
 Shows help message.
 
 `-n, --no_axis_flip`
-Ys VIII models has a Y up / -X forward orientation, the default behavior of the glTF conversion is to rotate the models to Z up / Y forward orientation by rotating the base node 90 degrees and transforming the position and normal data.  (The exporter does not do this, the user is expected to select Z up / Y forward on import in Blender so that exports can be used properly in game.  glTF import does not allow axis selection though, so this transform is needed.)  Use this option to override the default behavior and skip the transform.
+Ys models has a Y up / -X forward orientation, the default behavior of the glTF conversion is to rotate the models to Z up / Y forward orientation by rotating the base node 90 degrees and transforming the position and normal data.  (The exporter does not do this, the user is expected to select Z up / Y forward on import in Blender so that exports can be used properly in game.  glTF import does not allow axis selection though, so this transform is needed.)  Use this option to override the default behavior and skip the transform.
 
 `-r, --render_no_skel`
-As the Ys VIII models have world objects / bounding boxes etc that have no skeleton, the script by default skips including these since they are not useful in the glTF for weight painting etc.  If this option is invoked, the meshes without skeleton (weight groups) will be included in the glTF.
+As the Ys models have world objects / bounding boxes etc that have no skeleton, the script by default skips including these since they are not useful in the glTF for weight painting etc.  If this option is invoked, the meshes without skeleton (weight groups) will be included in the glTF.
 
 `-o, --overwrite`
 Overwrite existing files without prompting.
