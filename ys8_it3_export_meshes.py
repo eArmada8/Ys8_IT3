@@ -582,11 +582,11 @@ def parse_texi_block (f):
         if len(texture_data) > 0:
             texture = dds_header(ihdr[0]['data']['dim1'], ihdr[0]['data']['dim2'], len(texture_data)) +\
                 unswizzle(texture_data, ihdr[0]['data']['dim1'], ihdr[0]['data']['dim2'], 16)
-            return(section_info, texture)
         else:
-            return(section_info, b'')
+            texture = b''
     else:
-        return(section_info, b'')
+        texture = b''
+    return(section_info, texture)
 
 def obtain_textures (f, it3_contents):
     texi_blocks = [i for i in range(len(it3_contents)) if it3_contents[i]['type'] in ['TEXI', 'TEX2']]
@@ -602,7 +602,11 @@ def obtain_textures (f, it3_contents):
                 name += f.read(1)
             it3_contents[texi_blocks[i]]['texture_name'] = name.rstrip(b'\x00').decode('ASCII')
         print("Processing texture {0}".format(it3_contents[texi_blocks[i]]['texture_name']))
+        start_offset = f.tell()
         it3_contents[texi_blocks[i]]["data"], texture = parse_texi_block(f)
+        if len(texture) == 0:
+            f.seek(start_offset)
+            texture = f.read(it3_contents[texi_blocks[i]]['size'] - (start_offset - it3_contents[texi_blocks[i]]['section_start_offset']))
         textures.append({'name': it3_contents[texi_blocks[i]]['texture_name'], 'texture': texture})
     return(it3_contents, textures)
 
@@ -669,8 +673,12 @@ def process_it3 (it3_filename, complete_maps = complete_vgmaps_default, trim_for
         print("Writing textures")
         for i in range(len(textures)):
             safe_filename = "".join([x if x not in "\/:*?<>|" else "_" for x in textures[i]["name"]])
-            with open(it3_filename[:-4] + '/textures/{0}.dds'.format(safe_filename), 'wb') as f:
-                f.write(textures[i]["texture"])
+            if textures[i]["texture"][0:4] == b'DDS ':
+                with open(it3_filename[:-4] + '/textures/{0}.dds'.format(safe_filename), 'wb') as f:
+                    f.write(textures[i]["texture"])
+            else:
+                with open(it3_filename[:-4] + '/textures/{0}.itp'.format(safe_filename), 'wb') as f:
+                    f.write(textures[i]["texture"])
     return
 
 if __name__ == "__main__":
