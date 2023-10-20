@@ -98,6 +98,28 @@ def make_88_fmt():
         'SemanticIndex': '0', 'Format': 'R8G8B8A8_UINT', 'InputSlot': '0',\
         'AlignedByteOffset': '84', 'InputSlotClass': 'per-vertex', 'InstanceDataStepRate': '0'}]})
 
+def make_vpa8_fmt():
+    return({'stride': '40', 'topology': 'trianglelist', 'format': 'DXGI_FORMAT_R16_UINT',\
+    'elements': [{'id': '0', 'SemanticName': 'POSITION', 'SemanticIndex': '0',\
+    'Format': 'R32G32B32_FLOAT', 'InputSlot': '0', 'AlignedByteOffset': '0',\
+    'InputSlotClass': 'per-vertex', 'InstanceDataStepRate': '0'}, {'id': '1',\
+    'SemanticName': 'TEXCOORD', 'SemanticIndex': '0', 'Format': 'R32G32_FLOAT',\
+    'InputSlot': '0', 'AlignedByteOffset': '12', 'InputSlotClass': 'per-vertex',\
+    'InstanceDataStepRate': '0'}, {'id': '2', 'SemanticName': 'COLOR',\
+    'SemanticIndex': '0', 'Format': 'R8G8B8A8_UNORM', 'InputSlot': '0',\
+    'AlignedByteOffset': '20', 'InputSlotClass': 'per-vertex', 'InstanceDataStepRate': '0'},\
+    {'id': '3', 'SemanticName': 'COLOR', 'SemanticIndex': '1', 'Format': 'R8G8B8A8_UNORM',\
+    'InputSlot': '0', 'AlignedByteOffset': '24', 'InputSlotClass': 'per-vertex',\
+    'InstanceDataStepRate': '0'}, {'id': '5', 'SemanticName': 'BLENDINDICES',\
+    'SemanticIndex': '0', 'Format': 'R8G8B8A8_UINT', 'InputSlot': '0',\
+    'AlignedByteOffset': '28', 'InputSlotClass': 'per-vertex', 'InstanceDataStepRate': '0'},\
+    {'id': '4', 'SemanticName': 'BLENDWEIGHTS', 'SemanticIndex': '0',\
+    'Format': 'R8G8B8A8_SNORM', 'InputSlot': '0', 'AlignedByteOffset': '32',\
+    'InputSlotClass': 'per-vertex', 'InstanceDataStepRate': '0'}, {'id': '6',\
+    'SemanticName': 'NORMAL', 'SemanticIndex': '0', 'Format': 'R8G8B8A8_SNORM',\
+    'InputSlot': '0', 'AlignedByteOffset': '36', 'InputSlotClass': 'per-vertex',\
+    'InstanceDataStepRate': '0'}]})
+
 def parse_data_block_new (f, block_size, is_compressed):
     # TODO: Find out what compression algorithm this is, and implement it using the standard library
     contents = bytes()
@@ -342,6 +364,41 @@ def parse_bon3_block (f):
         addr_bone += 64
     return({'mesh_name': mesh_name, 'joints': joints, 'bones': bones})
 
+# Thank you to Kyuuhachi for partially reversing VPA8 and sharing his findings with me!
+def parse_vpa8_block (f):
+    count, size1, size2 = struct.unpack("<3I", f.read(12))
+    with io.BytesIO(parse_data_blocks(f)) as ff:
+        p_arr_v = [struct.unpack("<4f4I8f13I", ff.read(116)) for i in range(count)]
+    buffer_v = b''.join([parse_data_blocks(f) for i in range(math.ceil(size1 / 0x40000))]) # len(data1) == size1
+    with io.BytesIO(parse_data_blocks(f)) as ff:
+        p_arr_i = [struct.unpack("<3I", ff.read(12)) for i in range(count)]
+    buffer_i = b''.join([parse_data_blocks(f) for i in range(math.ceil(size2 / 0x40000))]) # len(data2) * 2 == size2
+    fmt_struct = make_vpa8_fmt()
+    section_info = []
+    mesh_buffers = []
+    pointer_v = 0
+    pointer_i = 0
+    for i in range(count):
+        mesh = {}
+        mesh["header"] = { 'center': p_arr_v[i][0:4], 'v_unk0': p_arr_v[i][4], 'material': p_arr_v[i][5],\
+            'v_unk1': p_arr_v[i][6], 'num_vertices': p_arr_v[i][7], 'min': p_arr_v[i][8:12],\
+            'max': p_arr_v[i][12:16], 'v_unk3': p_arr_v[i][16:20], 'bone_palette': p_arr_v[i][20:29],\
+            'i_unk0': p_arr_i[i][0], 'num_indices': p_arr_i[i][1], 'i_unk1': p_arr_i[i][2] }
+        mesh["material_id"] = mesh["header"]["material"]
+        mesh["block_size"] = fmt_struct['stride']
+        mesh["vertex_count"] = mesh["header"]["num_vertices"]
+        ib = read_ib_stream(buffer_i[pointer_i:pointer_i+mesh["header"]["num_indices"]*2], fmt_struct)
+        vb = read_vb_stream(buffer_v[pointer_v:pointer_v+mesh["header"]["num_vertices"]*40], fmt_struct)
+        # Map bone palette to mesh global indices
+        to_global = [0] + list(mesh["header"]['bone_palette'])
+        for j in range(len(vb[4]['Buffer'])):
+            vb[4]['Buffer'][j] = [to_global[x]//3 for x in vb[4]['Buffer'][j]]
+        section_info.append(mesh)
+        mesh_buffers.append({'fmt': fmt_struct, 'ib': ib, 'vb': vb})
+        pointer_i += mesh["header"]["num_indices"]*2
+        pointer_v += mesh["header"]["num_vertices"]*40
+    return(section_info, mesh_buffers)
+
 def parse_vpax_block (f, block_type, trim_for_gpu = False):
     count, = struct.unpack("<I", f.read(4))
     indices = []
@@ -387,19 +444,22 @@ def parse_vpax_block (f, block_type, trim_for_gpu = False):
     return(section_info, mesh_buffers)
 
 def obtain_mesh_data (f, it3_contents, it3_filename, trim_for_gpu = False):
-    vpax_blocks = [i for i in range(len(it3_contents)) if it3_contents[i]['type'] in ['VPA9', 'VPAX', 'VP11']]
+    vpax_blocks = [i for i in range(len(it3_contents)) if it3_contents[i]['type'] in ['VPA8', 'VPA9', 'VPAX', 'VP11']]
     meshes = []
     for i in range(len(vpax_blocks)):
         print("Processing section {0}".format(it3_contents[vpax_blocks[i]]['info_name']))
         f.seek(it3_contents[vpax_blocks[i]]['section_start_offset'])
-        it3_contents[vpax_blocks[i]]["data"], mesh_data = parse_vpax_block(f, it3_contents[vpax_blocks[i]]['type'], trim_for_gpu)
+        if it3_contents[vpax_blocks[i]]['type'] == 'VPA8':
+            it3_contents[vpax_blocks[i]]["data"], mesh_data = parse_vpa8_block(f)
+            node_list = [it3_contents[vpax_blocks[i]]['info_name']]
+        else:
+            it3_contents[vpax_blocks[i]]["data"], mesh_data = parse_vpax_block(f, it3_contents[vpax_blocks[i]]['type'], trim_for_gpu)
+            # For some reason Ys VIII starts numbering at 1 (root is node 1, not node 0)
+            node_list = [it3_filename[:-4]]
         bone_section = [x for x in it3_contents if x['type'] == 'BON3'\
             and x['info_name'] == it3_contents[vpax_blocks[i]]['info_name']]
         if len(bone_section) > 0:
-            # For some reason Ys VIII starts numbering at 1 (root is node 1, not node 0)
-            node_list = [it3_filename[:-4]] + bone_section[0]['data']['joints']
-        else:
-            node_list = []
+            node_list.extend(bone_section[0]['data']['joints'])
         meshes.append({'name': it3_contents[vpax_blocks[i]]['info_name'], 'meshes': mesh_data,\
             'node_list': node_list})
     return(it3_contents, meshes)
@@ -522,7 +582,11 @@ def parse_texi_block (f):
         if len(texture_data) > 0:
             texture = dds_header(ihdr[0]['data']['dim1'], ihdr[0]['data']['dim2'], len(texture_data)) +\
                 unswizzle(texture_data, ihdr[0]['data']['dim1'], ihdr[0]['data']['dim2'], 16)
-    return(section_info, texture)
+            return(section_info, texture)
+        else:
+            return(section_info, b'')
+    else:
+        return(section_info, b'')
 
 def obtain_textures (f, it3_contents):
     texi_blocks = [i for i in range(len(it3_contents)) if it3_contents[i]['type'] in ['TEXI', 'TEX2']]

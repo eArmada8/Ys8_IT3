@@ -2,11 +2,11 @@
 A script to get the mesh data and textures out of IT3 files, hopefully someday I will find a way to get both back into the IT3 file.  The mesh output is in .fmt/.vb/.ib files that are compatible with DarkStarSword Blender import plugin for 3DMigoto, textures are in DDS format, and metadata is in JSON format.  Tested with Ys VIII / IX models so far.
 
 ## Credits:
-99.9% of my understanding of the IT3 format comes from the reverse engineering work of [TwnKey](github.com/TwnKey), and specifically [TwnKey's model dumper](https://github.com/TwnKey/IT3Dumper).  Also a huge thank you [uyjulian](github.com/uyjulian), for generously giving me the Falcom decompression algorithm from his [IT3 parser](https://gist.github.com/uyjulian/a6ba33dc29858327ffa0db57f447abe5).
+99.9% of my understanding of the IT3 format comes from the reverse engineering work of [TwnKey](https://github.com/TwnKey), and specifically [TwnKey's model dumper](https://github.com/TwnKey/IT3Dumper), for which I am eternally grateful.  Also a huge thank you [uyjulian](https://github.com/uyjulian), for generously giving me the Falcom decompression algorithm from his [IT3 parser](https://gist.github.com/uyjulian/a6ba33dc29858327ffa0db57f447abe5).  Thank you to [Kyuuhachi](https://github.com/Kyuuhachi) for sharing his findings on the structure of VPA8 as well.
 
 None of this would be possible without the work of DarkStarSword and his amazing 3DMigoto-Blender plugin, of course.
 
-I am very thankful for TwnKey, uyjulian, DarkStarSword, and the Kiseki modding discord for their brilliant work and for sharing that work so freely.
+I am very thankful for TwnKey, uyjulian, Kyuuhachi, DarkStarSword, and the Kiseki modding discord for their brilliant work and for sharing that work so freely.
 
 ## Requirements:
 1. Python 3.10 and newer is required for use of these scripts.  It is free from the Microsoft Store, for Windows users.  For Linux users, please consult your distro.
