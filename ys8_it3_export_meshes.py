@@ -364,15 +364,23 @@ def parse_bon3_block (f):
         addr_bone += 64
     return({'mesh_name': mesh_name, 'joints': joints, 'bones': bones})
 
-# Thank you to Kyuuhachi for partially reversing VPA8 and sharing his findings with me!
-def parse_vpa8_block (f):
-    count, size1, size2 = struct.unpack("<3I", f.read(12))
-    with io.BytesIO(parse_data_blocks(f)) as ff:
-        p_arr_v = [struct.unpack("<4f4I8f13I", ff.read(116)) for i in range(count)]
-    buffer_v = b''.join([parse_data_blocks(f) for i in range(math.ceil(size1 / 0x40000))]) # len(data1) == size1
-    with io.BytesIO(parse_data_blocks(f)) as ff:
-        p_arr_i = [struct.unpack("<3I", ff.read(12)) for i in range(count)]
-    buffer_i = b''.join([parse_data_blocks(f) for i in range(math.ceil(size2 / 0x40000))]) # len(data2) * 2 == size2
+# Thank you to Kyuuhachi for partially reversing VPA7/VPA8 and sharing his findings with me!
+def parse_vpa78_block (f, block_type):
+    count, size1 = struct.unpack("<2I", f.read(8))
+    if block_type == 'VPA7':
+        p_arr_v = [struct.unpack("<I4f4I8f12I", f.read(116)) for i in range(count)]
+        buffer_v = parse_data_blocks(f)
+        size2, = struct.unpack("<I", f.read(4))
+        p_arr_i = [struct.unpack("<I", f.read(4)) for i in range(count)]
+        buffer_i = parse_data_blocks(f)
+    else: #VPA8
+        size2, = struct.unpack("<I", f.read(4))
+        with io.BytesIO(parse_data_blocks(f)) as ff:
+            p_arr_v = [struct.unpack("<4f4I8f13I", ff.read(116)) for i in range(count)]
+        buffer_v = b''.join([parse_data_blocks(f) for i in range(math.ceil(size1 / 0x40000))]) # len(data1) == size1
+        with io.BytesIO(parse_data_blocks(f)) as ff:
+            p_arr_i = [struct.unpack("<3I", ff.read(12)) for i in range(count)]
+        buffer_i = b''.join([parse_data_blocks(f) for i in range(math.ceil(size2 / 0x40000))]) # len(data2) * 2 == size2
     fmt_struct = make_vpa8_fmt()
     section_info = []
     mesh_buffers = []
@@ -380,10 +388,16 @@ def parse_vpa8_block (f):
     pointer_i = 0
     for i in range(count):
         mesh = {}
-        mesh["header"] = { 'center': p_arr_v[i][0:4], 'v_unk0': p_arr_v[i][4], 'material': p_arr_v[i][5],\
-            'v_unk1': p_arr_v[i][6], 'num_vertices': p_arr_v[i][7], 'min': p_arr_v[i][8:12],\
-            'max': p_arr_v[i][12:16], 'v_unk3': p_arr_v[i][16:20], 'bone_palette': p_arr_v[i][20:29],\
-            'i_unk0': p_arr_i[i][0], 'num_indices': p_arr_i[i][1], 'i_unk1': p_arr_i[i][2] }
+        if block_type == 'VPA7':
+            mesh["header"] = { 'nVerts': p_arr_v[i][0], 'center': p_arr_v[i][1:5], 'v_unk0': p_arr_v[i][5], 'material': p_arr_v[i][6],\
+                'v_unk1': p_arr_v[i][7], 'num_vertices': p_arr_v[i][8], 'min': p_arr_v[i][9:13],\
+                'max': p_arr_v[i][13:17], 'v_unk3': p_arr_v[i][17:21], 'bone_palette': p_arr_v[i][21:29],\
+                'num_indices': p_arr_i[i][0] }
+        else: #VPA8
+            mesh["header"] = { 'center': p_arr_v[i][0:4], 'v_unk0': p_arr_v[i][4], 'material': p_arr_v[i][5],\
+                'v_unk1': p_arr_v[i][6], 'num_vertices': p_arr_v[i][7], 'min': p_arr_v[i][8:12],\
+                'max': p_arr_v[i][12:16], 'v_unk3': p_arr_v[i][16:20], 'bone_palette': p_arr_v[i][20:29],\
+                'i_unk0': p_arr_i[i][0], 'num_indices': p_arr_i[i][1], 'i_unk1': p_arr_i[i][2] }
         mesh["material_id"] = mesh["header"]["material"]
         mesh["block_size"] = fmt_struct['stride']
         mesh["vertex_count"] = mesh["header"]["num_vertices"]
@@ -447,13 +461,13 @@ def parse_vpax_block (f, block_type, trim_for_gpu = False):
     return(section_info, mesh_buffers)
 
 def obtain_mesh_data (f, it3_contents, it3_filename, trim_for_gpu = False):
-    vpax_blocks = [i for i in range(len(it3_contents)) if it3_contents[i]['type'] in ['VPA8', 'VPA9', 'VPAX', 'VP11']]
+    vpax_blocks = [i for i in range(len(it3_contents)) if it3_contents[i]['type'] in ['VPA7', 'VPA8', 'VPA9', 'VPAX', 'VP11']]
     meshes = []
     for i in range(len(vpax_blocks)):
         print("Processing section {0}".format(it3_contents[vpax_blocks[i]]['info_name']))
         f.seek(it3_contents[vpax_blocks[i]]['section_start_offset'])
-        if it3_contents[vpax_blocks[i]]['type'] == 'VPA8':
-            it3_contents[vpax_blocks[i]]["data"], mesh_data = parse_vpa8_block(f)
+        if it3_contents[vpax_blocks[i]]['type'] in ['VPA7', 'VPA8']:
+            it3_contents[vpax_blocks[i]]["data"], mesh_data = parse_vpa78_block(f, it3_contents[vpax_blocks[i]]['type'])
             node_list = [it3_contents[vpax_blocks[i]]['info_name']]
         else:
             it3_contents[vpax_blocks[i]]["data"], mesh_data = parse_vpax_block(f, it3_contents[vpax_blocks[i]]['type'], trim_for_gpu)
