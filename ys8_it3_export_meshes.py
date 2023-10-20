@@ -391,8 +391,11 @@ def parse_vpa8_block (f):
         vb = read_vb_stream(buffer_v[pointer_v:pointer_v+mesh["header"]["num_vertices"]*40], fmt_struct)
         # Map bone palette to mesh global indices
         to_global = [0] + list(mesh["header"]['bone_palette'])
-        for j in range(len(vb[4]['Buffer'])):
-            vb[4]['Buffer'][j] = [to_global[x]//3 for x in vb[4]['Buffer'][j]]
+        try:
+            for j in range(len(vb[4]['Buffer'])):
+                vb[4]['Buffer'][j] = [to_global[x]//3 for x in vb[4]['Buffer'][j]]
+        except IndexError:
+            print("Unable to convert local bone indices to mesh global, skipping...")
         section_info.append(mesh)
         mesh_buffers.append({'fmt': fmt_struct, 'ib': ib, 'vb': vb})
         pointer_i += mesh["header"]["num_indices"]*2
