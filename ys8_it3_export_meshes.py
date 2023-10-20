@@ -604,10 +604,10 @@ def obtain_textures (f, it3_contents):
         print("Processing texture {0}".format(it3_contents[texi_blocks[i]]['texture_name']))
         start_offset = f.tell()
         it3_contents[texi_blocks[i]]["data"], texture = parse_texi_block(f)
-        if len(texture) == 0:
-            f.seek(start_offset)
-            texture = f.read(it3_contents[texi_blocks[i]]['size'] - (start_offset - it3_contents[texi_blocks[i]]['section_start_offset']))
-        textures.append({'name': it3_contents[texi_blocks[i]]['texture_name'], 'texture': texture})
+        tex_block = {'name': it3_contents[texi_blocks[i]]['texture_name'], 'texture': texture}
+        f.seek(start_offset)
+        tex_block['itp'] = f.read(it3_contents[texi_blocks[i]]['size'] - (start_offset - it3_contents[texi_blocks[i]]['section_start_offset']))
+        textures.append(tex_block)
     return(it3_contents, textures)
 
 def parse_it3 (f):
@@ -646,7 +646,7 @@ def parse_it3 (f):
         f.seek(section_info["section_start_offset"] + section_info["size"], 0) # Move forward to the next section
     return(contents)
 
-def process_it3 (it3_filename, complete_maps = complete_vgmaps_default, trim_for_gpu = False, overwrite = False):
+def process_it3 (it3_filename, complete_maps = complete_vgmaps_default, trim_for_gpu = False, always_write_itp = False, overwrite = False):
     print("Processing {0}".format(it3_filename))
     if os.path.exists(it3_filename[:-4]) and (os.path.isdir(it3_filename[:-4])) and (overwrite == False):
         if str(input(it3_filename[:-4] + " folder exists! Overwrite? (y/N) ")).lower()[0:1] == 'y':
@@ -673,12 +673,12 @@ def process_it3 (it3_filename, complete_maps = complete_vgmaps_default, trim_for
         print("Writing textures")
         for i in range(len(textures)):
             safe_filename = "".join([x if x not in "\/:*?<>|" else "_" for x in textures[i]["name"]])
-            if textures[i]["texture"][0:4] == b'DDS ':
+            if len(textures[i]["texture"]) > 0:
                 with open(it3_filename[:-4] + '/textures/{0}.dds'.format(safe_filename), 'wb') as f:
                     f.write(textures[i]["texture"])
-            else:
+            if always_write_itp ==True or not len(textures[i]["texture"]) > 0:
                 with open(it3_filename[:-4] + '/textures/{0}.itp'.format(safe_filename), 'wb') as f:
-                    f.write(textures[i]["texture"])
+                    f.write(textures[i]["itp"])
     return
 
 if __name__ == "__main__":
@@ -694,6 +694,7 @@ if __name__ == "__main__":
         else:
             parser.add_argument('-c', '--completemaps', help="Provide vgmaps with entire mesh skeleton", action="store_true")
         parser.add_argument('-t', '--trim_for_gpu', help="Trim vertex buffer for GPU injection (3DMigoto)", action="store_true")
+        parser.add_argument('-i', '--always_write_itp', help="Output raw ITP files even when writing DDS textures", action="store_true")
         parser.add_argument('-o', '--overwrite', help="Overwrite existing files", action="store_true")
         parser.add_argument('it3_filename', help="Name of it3 file to export from (required).")
         args = parser.parse_args()
@@ -702,7 +703,8 @@ if __name__ == "__main__":
         else:
             complete_maps = args.completemaps
         if os.path.exists(args.it3_filename) and args.it3_filename[-4:].lower() == '.it3':
-            process_it3(args.it3_filename, complete_maps = complete_maps, trim_for_gpu = args.trim_for_gpu, overwrite = args.overwrite)
+            process_it3(args.it3_filename, complete_maps = complete_maps, trim_for_gpu = args.trim_for_gpu,\
+                always_write_itp = args.always_write_itp, overwrite = args.overwrite)
     else:
         it3_files = glob.glob('*.it3')
         for i in range(len(it3_files)):

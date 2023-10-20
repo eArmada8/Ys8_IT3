@@ -1,5 +1,5 @@
 # Ys VIII / IX IT3 mesh and texture export
-A script to get the mesh data and textures out of IT3 files, hopefully someday I will find a way to get both back into the IT3 file.  The mesh output is in .fmt/.vb/.ib files that are compatible with DarkStarSword Blender import plugin for 3DMigoto, textures are in DDS format, and metadata is in JSON format.  Tested with Ys VIII / IX models so far.
+A script to get the mesh data and textures out of IT3 files, hopefully someday I will find a way to get both back into the IT3 file.  The mesh output is in .fmt/.vb/.ib files that are compatible with DarkStarSword Blender import plugin for 3DMigoto, textures are in DDS format, and metadata is in JSON format.  Successfully tested with Ys VIII / IX models so far, with limited support for Ys VII and Ys Memories of Celceta as well.  (It is conceivable that some other games using VPA8 or newer, such as Legend of Nayuta, may be supported, but these games are untested.)
 
 ## Credits:
 99.9% of my understanding of the IT3 format comes from the reverse engineering work of [TwnKey](https://github.com/TwnKey), and specifically [TwnKey's model dumper](https://github.com/TwnKey/IT3Dumper), for which I am eternally grateful.  Also a huge thank you [uyjulian](https://github.com/uyjulian), for generously giving me the Falcom decompression algorithm from his [IT3 parser](https://gist.github.com/uyjulian/a6ba33dc29858327ffa0db57f447abe5).  Thank you to [Kyuuhachi](https://github.com/Kyuuhachi) for sharing his findings on the structure of VPA8 as well.
@@ -18,6 +18,8 @@ I am very thankful for TwnKey, uyjulian, Kyuuhachi, DarkStarSword, and the Kisek
 ### ys8_it3_export_meshes.py
 Double click the python script and it will search the current folder for all .it3 files and export the meshes and textures into a folder with the same name as the it3 file.  Additionally, it will output a very incomplete JSON file with metadata, which I am using to understand this format further (there is no practical use just yet).
 
+In regards to textures, for Ys 8 and 9 models (modern TEXI/TEX2 blocks) the script will output DDS files.  Older games, the script will output raw ITP files (Falcom format).  Please use [Cradle](https://github.com/Aureole-Suite/Cradle/releases/) by Kyuuhachi to convert the ITP files into useable PNG files.
+
 **Command line arguments:**
 `ys8_it3_export_meshes.py [-h] [-c] [-t] [-o] it3_filename`
 
@@ -29,6 +31,9 @@ Shows help message.
 
 `-t, --trim_for_gpu`
 Trim vertex buffer for GPU injection (3DMigoto).  Meshes in the IT3 file have 18 vertex buffer semantics.  Only 12 of these are actually loaded into GPU memory.  This option produces smaller .vb files (with matching .fmt files) with the extraneous buffers discarded, so that the buffers can be used for injection with 3DMigoto.
+
+`-i, --always_write_itp`
+The default behavior of the script is to output ITP files only if they cannot be converted into DDS textures.  This option will direct the script to output both DDS and ITP files (particularly useful if the DDS files are incorrect / broken).
 
 `-o, --overwrite`
 Overwrite existing files without prompting.
