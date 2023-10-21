@@ -185,7 +185,8 @@ def write_glTF(filename, it3_contents, mesh_struct, skel_struct, flip_axis = Tru
     material_dict = {}
     for i in range(len(vpax_blocks)):
         material_dict[it3_contents[vpax_blocks[i]]['info_name']] \
-            = [g_material_dict[it3_contents[vpax_blocks[i]]['info_name']+'_'+str(x['material_id'])] for x in it3_contents[vpax_blocks[i]]['data']]
+            = [g_material_dict[it3_contents[vpax_blocks[i]]['info_name']+'_'+str(x['material_id'])] for x in it3_contents[vpax_blocks[i]]['data']\
+                if it3_contents[vpax_blocks[i]]['info_name']+'_'+str(x['material_id']) in g_material_dict]
     for i in range(len(skel_struct)):
         node = {'children': skel_struct[i]['children'], 'name': skel_struct[i]['name'],\
             'matrix': [x for y in numpy.array(skel_struct[i]['rel_matrix']).tolist() for x in y]}
@@ -258,7 +259,8 @@ def write_glTF(filename, it3_contents, mesh_struct, skel_struct, flip_axis = Tru
                 ib_stream.close()
                 del(ib_stream)
                 primitive["mode"] = 4 #TRIANGLES
-                primitive["material"] = material_dict[mesh_struct[i]["name"]][j]
+                if mesh_struct[i]["name"] in material_dict and len(material_dict[mesh_struct[i]["name"]]) > j:
+                    primitive["material"] = material_dict[mesh_struct[i]["name"]][j]
                 primitives.append(primitive)
                 del(submesh)
         mesh_node = [j for j in range(len(gltf_data['nodes']))\
