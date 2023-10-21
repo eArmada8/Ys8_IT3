@@ -460,7 +460,7 @@ def parse_vpax_block (f, block_type, trim_for_gpu = False):
             section_info.append(mesh)
     return(section_info, mesh_buffers)
 
-def obtain_mesh_data (f, it3_contents, it3_filename, trim_for_gpu = False):
+def obtain_mesh_data (f, it3_contents, it3_filename, preserve_gl_order = False, trim_for_gpu = False):
     vpax_blocks = [i for i in range(len(it3_contents)) if it3_contents[i]['type'] in ['VPA7', 'VPA8', 'VPA9', 'VPAX', 'VP11']]
     meshes = []
     for i in range(len(vpax_blocks)):
@@ -473,6 +473,9 @@ def obtain_mesh_data (f, it3_contents, it3_filename, trim_for_gpu = False):
             it3_contents[vpax_blocks[i]]["data"], mesh_data = parse_vpax_block(f, it3_contents[vpax_blocks[i]]['type'], trim_for_gpu)
             # For some reason Ys VIII starts numbering at 1 (root is node 1, not node 0)
             node_list = [it3_filename[:-4]]
+        if preserve_gl_order == False: # Swap triangles from OpenGL to D3D order
+            for j in range(len(mesh_data)):
+                mesh_data[j]['ib'] = [[x[0],x[2],x[1]] for x in mesh_data[j]['ib']]
         bone_section = [x for x in it3_contents if x['type'] == 'BON3'\
             and x['info_name'] == it3_contents[vpax_blocks[i]]['info_name']]
         if len(bone_section) > 0:
@@ -663,7 +666,7 @@ def parse_it3 (f):
         f.seek(section_info["section_start_offset"] + section_info["size"], 0) # Move forward to the next section
     return(contents)
 
-def process_it3 (it3_filename, complete_maps = complete_vgmaps_default, trim_for_gpu = False, always_write_itp = False, overwrite = False):
+def process_it3 (it3_filename, complete_maps = complete_vgmaps_default, preserve_gl_order = False, trim_for_gpu = False, always_write_itp = False, overwrite = False):
     print("Processing {0}".format(it3_filename))
     if os.path.exists(it3_filename[:-4]) and (os.path.isdir(it3_filename[:-4])) and (overwrite == False):
         if str(input(it3_filename[:-4] + " folder exists! Overwrite? (y/N) ")).lower()[0:1] == 'y':
@@ -671,7 +674,8 @@ def process_it3 (it3_filename, complete_maps = complete_vgmaps_default, trim_for
     if (overwrite == True) or not os.path.exists(it3_filename[:-4]):
         with open(it3_filename, 'rb') as f:
             it3_contents = parse_it3(f)
-            it3_contents, meshes = obtain_mesh_data(f, it3_contents, it3_filename, trim_for_gpu = trim_for_gpu)
+            it3_contents, meshes = obtain_mesh_data(f, it3_contents, it3_filename,\
+                preserve_gl_order = preserve_gl_order, trim_for_gpu = trim_for_gpu)
             it3_contents, textures = obtain_textures(f, it3_contents)
             if not os.path.exists(it3_filename[:-4]):
                 os.mkdir(it3_filename[:-4])
@@ -710,6 +714,7 @@ if __name__ == "__main__":
             parser.add_argument('-p', '--partialmaps', help="Provide vgmaps with non-empty groups only", action="store_false")
         else:
             parser.add_argument('-c', '--completemaps', help="Provide vgmaps with entire mesh skeleton", action="store_true")
+        parser.add_argument('-g', '--preserve_gl_order', help="Keep OpenGL index buffer format", action="store_true")
         parser.add_argument('-t', '--trim_for_gpu', help="Trim vertex buffer for GPU injection (3DMigoto)", action="store_true")
         parser.add_argument('-i', '--always_write_itp', help="Output raw ITP files even when writing DDS textures", action="store_true")
         parser.add_argument('-o', '--overwrite', help="Overwrite existing files", action="store_true")
@@ -720,8 +725,8 @@ if __name__ == "__main__":
         else:
             complete_maps = args.completemaps
         if os.path.exists(args.it3_filename) and args.it3_filename[-4:].lower() == '.it3':
-            process_it3(args.it3_filename, complete_maps = complete_maps, trim_for_gpu = args.trim_for_gpu,\
-                always_write_itp = args.always_write_itp, overwrite = args.overwrite)
+            process_it3(args.it3_filename, complete_maps = complete_maps, preserve_gl_order = args.preserve_gl_order, \
+                trim_for_gpu = args.trim_for_gpu, always_write_itp = args.always_write_itp, overwrite = args.overwrite)
     else:
         it3_files = glob.glob('*.it3')
         for i in range(len(it3_files)):

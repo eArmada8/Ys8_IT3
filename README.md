@@ -29,6 +29,9 @@ Shows help message.
 `-c, --completemaps`
 .vgmap files will have the entire skeleton, with every bone available to the mesh, included with each mesh.  This will result in many empty vertex groups upon import into Blender.  The default behavior is to only include vertex groups that contain at least one vertex.  Complete maps are primarily useful when merging one mesh into another.
 
+`-g, --preserve_gl_order'
+By default, the script will change the order of the triangles from OpenGL format to Direct3D format (from counter-clockwise to clockwise) for better compatibility with Blender and glTF.  This switch preserves the original index buffer order.
+
 `-t, --trim_for_gpu`
 Trim vertex buffer for GPU injection (3DMigoto).  Meshes in the IT3 file have 18 vertex buffer semantics.  Only 12 of these are actually loaded into GPU memory.  This option produces smaller .vb files (with matching .fmt files) with the extraneous buffers discarded, so that the buffers can be used for injection with 3DMigoto.
 
