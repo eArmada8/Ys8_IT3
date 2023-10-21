@@ -107,7 +107,7 @@ def convert_submesh_for_gltf(submesh, flip_axis = True):
                 new_vb.append(submesh['vb'][i])
             if new_element['SemanticName'] == 'WEIGHTS':
                 weight_sums = [sum(x) for x in new_vb[-1]["Buffer"]]
-                new_vb[-1]["Buffer"] = [[x/weight_sums[i] for x in new_vb[-1]["Buffer"][i]] for i in range(len(new_vb[-1]["Buffer"]))]
+                new_vb[-1]["Buffer"] = [[x/weight_sums[i] if weight_sums[i] > 0.0 else x for x in new_vb[-1]["Buffer"][i]] for i in range(len(new_vb[-1]["Buffer"]))]
             new_info = convert_format_for_gltf(dxgi_format)
             new_element['Format'] = new_info['format']
             if new_element['SemanticName'] in need_index:
@@ -136,6 +136,26 @@ def local_to_global_bone_indices(mesh_index, mesh_struct, skel_struct):
         global_node_dict[key] = [x for x in skel_struct if x['name'] == local_node_dict[key]][0]['id']
     return(global_node_dict)
 
+def generate_materials(gltf_data, it3_contents):
+    mat_blocks = [i for i in range(len(it3_contents)) if it3_contents[i]['type'] in ['MAT6']]
+    images = sorted(list(set([x['name'] for y in [x['textures'] for y in [x for y in mat_blocks for x in [it3_contents[y]['data']]] for x in y] for x in y])))
+    gltf_data['images'] = [{'uri':'textures/{}.png'.format(x)} for x in images]
+    for i in range(len(mat_blocks)):
+        info_name = it3_contents[mat_blocks[i]]['info_name']
+        for j in range(len(it3_contents[mat_blocks[i]]['data'])):
+            material = {}
+            material['name'] = info_name + '_' + str(j)
+            for k in range(len(it3_contents[mat_blocks[i]]['data'][j]['textures'])):
+                sampler = { 'wrapS': 10497, 'wrapT': 10497 } # Figure this out later
+                texture = { 'source': images.index(it3_contents[mat_blocks[i]]['data'][j]['textures'][k]['name']), 'sampler': len(gltf_data['samplers']) }
+                if it3_contents[mat_blocks[i]]['data'][j]['textures'][k]['flags'] == [1,0,0,0,0,0,0]:
+                    material['pbrMetallicRoughness']= { 'baseColorTexture' : { 'index' : len(gltf_data['textures']), 'texCoord': 0 },\
+                        'metallicFactor' : 0.0, 'roughnessFactor' : 1.0 }
+                gltf_data['samplers'].append(sampler)
+                gltf_data['textures'].append(texture)
+            gltf_data['materials'].append(material)
+    return(gltf_data)
+
 def write_glTF(filename, it3_contents, mesh_struct, skel_struct, flip_axis = True, render_non_skel_meshes = False):
     gltf_data = {}
     gltf_data['asset'] = { 'version': '2.0' }
@@ -143,14 +163,29 @@ def write_glTF(filename, it3_contents, mesh_struct, skel_struct, flip_axis = Tru
     gltf_data['bufferViews'] = []
     gltf_data['buffers'] = []
     gltf_data['meshes'] = []
+    gltf_data['materials'] = []
     gltf_data['nodes'] = []
+    gltf_data['samplers'] = []
     gltf_data['scenes'] = [{}]
     gltf_data['scenes'][0]['nodes'] = [0]
     gltf_data['scene'] = 0
     gltf_data['skins'] = []
+    gltf_data['textures'] = []
     giant_buffer = bytes()
     mesh_nodes = []
     buffer_view = 0
+    gltf_data = generate_materials(gltf_data, it3_contents)
+    missing_textures = [x['uri'] for x in gltf_data['images'] if not os.path.exists(x['uri'])]
+    if len(missing_textures) > 0:
+        print("Warning:  The following textures were not found:")
+        for texture in missing_textures:
+            print("{}".format(texture))
+    g_material_dict = {gltf_data['materials'][i]['name']:i for i in range(len(gltf_data['materials']))}
+    vpax_blocks = [i for i in range(len(it3_contents)) if it3_contents[i]['type'] in ['VPA7', 'VPA8', 'VPA9', 'VPAX', 'VP11']]
+    material_dict = {}
+    for i in range(len(vpax_blocks)):
+        material_dict[it3_contents[vpax_blocks[i]]['info_name']] \
+            = [g_material_dict[it3_contents[vpax_blocks[i]]['info_name']+'_'+str(x['material_id'])] for x in it3_contents[vpax_blocks[i]]['data']]
     for i in range(len(skel_struct)):
         node = {'children': skel_struct[i]['children'], 'name': skel_struct[i]['name'],\
             'matrix': [x for y in numpy.array(skel_struct[i]['rel_matrix']).tolist() for x in y]}
@@ -165,6 +200,7 @@ def write_glTF(filename, it3_contents, mesh_struct, skel_struct, flip_axis = Tru
             has_skeleton = False
         if has_skeleton:
             global_node_dict = local_to_global_bone_indices(i, mesh_struct, skel_struct)
+        primitives = []
         for j in range(len(mesh_struct[i]["meshes"])): # Submesh
             if has_skeleton or render_non_skel_meshes == True:
                 print("Processing {0} submesh {1}...".format(mesh_struct[i]["name"], j))
@@ -222,28 +258,30 @@ def write_glTF(filename, it3_contents, mesh_struct, skel_struct, flip_axis = Tru
                 ib_stream.close()
                 del(ib_stream)
                 primitive["mode"] = 4 #TRIANGLES
-                mesh_nodes.append(len(gltf_data['nodes']))
-                gltf_data['nodes'].append({'mesh': len(gltf_data['meshes']), 'name': "Mesh_{0}_{1}".format(i,j)})
-                gltf_data['meshes'].append({"primitives": [primitive], "name": "Mesh_{0}_{1}".format(i,j)})
-                if has_skeleton:
-                    gltf_data['nodes'][-1]['skin'] = len(gltf_data['skins'])
+                primitive["material"] = material_dict[mesh_struct[i]["name"]][j]
+                primitives.append(primitive)
                 del(submesh)
-            if has_skeleton:
-                inv_mtx_buffer = bytes()
-                for k in global_node_dict:
-                    inv_bind_mtx = [num for row in numpy.linalg.inv(numpy.array(skel_struct[global_node_dict[k]]['matrix'])).tolist() for num in row]
-                    inv_bind_mtx = [round(x,15) for x in inv_bind_mtx]
-                    inv_mtx_buffer += struct.pack("<16f", *inv_bind_mtx)
-                gltf_data['skins'].append({"inverseBindMatrices": len(gltf_data['accessors']), "joints": list(global_node_dict.values())})
-                gltf_data['accessors'].append({"bufferView" : buffer_view,\
-                    "componentType": 5126,\
-                    "count": len(global_node_dict),\
-                    "type": "MAT4"})
-                gltf_data['bufferViews'].append({"buffer": 0,\
-                    "byteOffset": len(giant_buffer),\
-                    "byteLength": len(inv_mtx_buffer)})
-                buffer_view += 1
-                giant_buffer += inv_mtx_buffer
+        mesh_node = [j for j in range(len(gltf_data['nodes']))\
+            if gltf_data['nodes'][j]['name'] == mesh_struct[i]["name"]][0]
+        gltf_data['nodes'][mesh_node]['mesh'] = len(gltf_data['meshes'])
+        gltf_data['meshes'].append({"primitives": primitives, "name": mesh_struct[i]["name"]})
+        if has_skeleton:
+            gltf_data['nodes'][mesh_node]['skin'] = len(gltf_data['skins'])
+            inv_mtx_buffer = bytes()
+            for k in global_node_dict:
+                inv_bind_mtx = [num for row in numpy.linalg.inv(numpy.array(skel_struct[global_node_dict[k]]['matrix'])).tolist() for num in row]
+                inv_bind_mtx = [round(x,15) for x in inv_bind_mtx]
+                inv_mtx_buffer += struct.pack("<16f", *inv_bind_mtx)
+            gltf_data['skins'].append({"inverseBindMatrices": len(gltf_data['accessors']), "joints": list(global_node_dict.values())})
+            gltf_data['accessors'].append({"bufferView" : buffer_view,\
+                "componentType": 5126,\
+                "count": len(global_node_dict),\
+                "type": "MAT4"})
+            gltf_data['bufferViews'].append({"buffer": 0,\
+                "byteOffset": len(giant_buffer),\
+                "byteLength": len(inv_mtx_buffer)})
+            buffer_view += 1
+            giant_buffer += inv_mtx_buffer
     gltf_data['scenes'][0]['nodes'].extend(mesh_nodes)
     gltf_data['buffers'].append({"byteLength": len(giant_buffer), "uri": filename[:-4]+'.bin'})
     with open(filename[:-4]+'.bin', 'wb') as f:

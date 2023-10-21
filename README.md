@@ -41,6 +41,8 @@ Overwrite existing files without prompting.
 ### ys8_it3_to_basic_gltf.py
 Double click the python script to run and it will attempt to convert the IT3 model into a basic glTF model, with skeleton.  This tool as written is for obtaining the skeleton for rigging the .fmt/.ib/.vb/.vgmap meshes from the export tool.  *The meshes included in the model are not particularly useful as they cannot be exported back to IT3,* just delete them and import the exported meshes (.fmt/.ib/.vb./vgmap) instead - the tool only includes meshes because Blender refuses to open a glTF file without meshes.  After importing the meshes, Ctrl-click on the armature and parent (Object -> Parent -> Armature Deform {without the extra options}).
 
+The script has basic texture support.  Place all the textures required in a 'textures' folder in the same folder as the .gltf file, in .png format.
+
 It will search the current folder for it3 files and convert them all, unless you use command line options.
 
 **Command line arguments:**
