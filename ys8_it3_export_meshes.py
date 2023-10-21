@@ -305,6 +305,23 @@ def parse_jntv_block (f):
     return {'v0': list(struct.unpack("<4f", f.read(16))),\
         'id': struct.unpack("<I", f.read(4))[0]}
 
+def parse_mat4_block (f):
+    def read_mat4_string(f):
+        return(f.read(0x40).rstrip(b'\x00').decode('ASCII'))
+    count, = struct.unpack("<I", f.read(4))
+    mat_data = parse_data_blocks(f)
+    mat_blocks = []
+    for i in range(count):
+        data_block = io.BytesIO(mat_data[i*0x180:(i+1)*0x180])
+        mat_block = {'name': read_mat4_string(data_block), 'textures': []}
+        for _ in range(4): # Cheating here for now, not sure there is anything in the second 0x40 bytes
+            name = read_mat4_string(data_block)
+            if name != '':
+                mat_block['textures'].append({'name': name})
+        # 0x40 more bytes to go, but I don't know what they are, flags of some sort
+        mat_blocks.append(mat_block)
+    return(mat_blocks)
+
 def parse_mat6_block (f):
     count, = struct.unpack("<I", f.read(4))
     mat_blocks = []
@@ -658,6 +675,8 @@ def parse_it3 (f):
             section_info["data"] = parse_chid_block(f)
         elif section_info["type"] == 'JNTV':
             section_info["data"] = parse_jntv_block(f)
+        elif section_info["type"] == 'MAT4':
+            section_info["data"] = parse_mat4_block(f)
         elif section_info["type"] == 'MAT6':
             section_info["data"] = parse_mat6_block(f)
         elif section_info["type"] == 'BON3':

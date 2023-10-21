@@ -137,23 +137,42 @@ def local_to_global_bone_indices(mesh_index, mesh_struct, skel_struct):
     return(global_node_dict)
 
 def generate_materials(gltf_data, it3_contents):
-    mat_blocks = [i for i in range(len(it3_contents)) if it3_contents[i]['type'] in ['MAT6']]
+    mat_blocks = [i for i in range(len(it3_contents)) if it3_contents[i]['type'] in ['MAT4','MAT6']]
     images = sorted(list(set([x['name'] for y in [x['textures'] for y in [x for y in mat_blocks for x in [it3_contents[y]['data']]] for x in y] for x in y])))
     gltf_data['images'] = [{'uri':'textures/{}.png'.format(x)} for x in images]
     for i in range(len(mat_blocks)):
         info_name = it3_contents[mat_blocks[i]]['info_name']
         for j in range(len(it3_contents[mat_blocks[i]]['data'])):
+            add_material = False
             material = {}
             material['name'] = info_name + '_' + str(j)
-            for k in range(len(it3_contents[mat_blocks[i]]['data'][j]['textures'])):
-                sampler = { 'wrapS': 10497, 'wrapT': 10497 } # Figure this out later
-                texture = { 'source': images.index(it3_contents[mat_blocks[i]]['data'][j]['textures'][k]['name']), 'sampler': len(gltf_data['samplers']) }
-                if it3_contents[mat_blocks[i]]['data'][j]['textures'][k]['flags'] == [1,0,0,0,0,0,0]:
+            if it3_contents[mat_blocks[i]]['type'] == 'MAT6':
+                for k in range(len(it3_contents[mat_blocks[i]]['data'][j]['textures'])):
+                    add_texture = False
+                    sampler = { 'wrapS': 10497, 'wrapT': 33648 } # Figure this out later
+                    texture = { 'source': images.index(it3_contents[mat_blocks[i]]['data'][j]['textures'][k]['name']), 'sampler': len(gltf_data['samplers']) }
+                    if it3_contents[mat_blocks[i]]['data'][j]['textures'][k]['flags'][0:3] == [1,0,0]:
+                        material['pbrMetallicRoughness']= { 'baseColorTexture' : { 'index' : len(gltf_data['textures']), 'texCoord': 0 },\
+                            'metallicFactor' : 0.0, 'roughnessFactor' : 1.0 }
+                        add_texture = True
+                    elif it3_contents[mat_blocks[i]]['data'][j]['textures'][k]['flags'][0:2] == [2,0]:
+                        material['normalTexture'] =  { 'index' : len(gltf_data['textures']), 'texCoord': 0 }
+                        add_texture = True
+                    if add_texture == True:
+                        add_material = True
+                        gltf_data['samplers'].append(sampler)
+                        gltf_data['textures'].append(texture)
+            else: # MAT4
+                if len(it3_contents[mat_blocks[i]]['data'][j]['textures']) > 0:
+                    sampler = { 'wrapS': 10497, 'wrapT': 10497 } # Figure this out later
+                    texture = { 'source': images.index(it3_contents[mat_blocks[i]]['data'][j]['textures'][0]['name']), 'sampler': len(gltf_data['samplers']) }
                     material['pbrMetallicRoughness']= { 'baseColorTexture' : { 'index' : len(gltf_data['textures']), 'texCoord': 0 },\
                         'metallicFactor' : 0.0, 'roughnessFactor' : 1.0 }
-                gltf_data['samplers'].append(sampler)
-                gltf_data['textures'].append(texture)
-            gltf_data['materials'].append(material)
+                    add_material = True
+                    gltf_data['samplers'].append(sampler)
+                    gltf_data['textures'].append(texture)
+            if add_material == True:
+                gltf_data['materials'].append(material)
     return(gltf_data)
 
 def write_glTF(filename, it3_contents, mesh_struct, skel_struct, flip_axis = True, render_non_skel_meshes = False):
