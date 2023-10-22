@@ -149,7 +149,8 @@ def generate_materials(gltf_data, it3_contents):
             if it3_contents[mat_blocks[i]]['type'] == 'MAT6':
                 for k in range(len(it3_contents[mat_blocks[i]]['data'][j]['textures'])):
                     add_texture = False
-                    sampler = { 'wrapS': 10497, 'wrapT': 33648 } # Figure this out later
+                    sampler = { 'wrapS': {0:10497,1:33071,2:33648}[it3_contents[mat_blocks[i]]['data'][j]['textures'][k]['flags'][4]],\
+                        'wrapT': {0:10497,1:33071,2:33648}[it3_contents[mat_blocks[i]]['data'][j]['textures'][k]['flags'][6]] } # This is probably wrong
                     texture = { 'source': images.index(it3_contents[mat_blocks[i]]['data'][j]['textures'][k]['name']), 'sampler': len(gltf_data['samplers']) }
                     if it3_contents[mat_blocks[i]]['data'][j]['textures'][k]['flags'][0:3] == [1,0,0]:
                         material['pbrMetallicRoughness']= { 'baseColorTexture' : { 'index' : len(gltf_data['textures']), 'texCoord': 0 },\
@@ -172,6 +173,7 @@ def generate_materials(gltf_data, it3_contents):
                     gltf_data['samplers'].append(sampler)
                     gltf_data['textures'].append(texture)
             if add_material == True:
+                material['alphaMode'] = 'MASK' # Not optimal since clearly some models use some form of alpha blending, but this will have to do.
                 gltf_data['materials'].append(material)
     return(gltf_data)
 
