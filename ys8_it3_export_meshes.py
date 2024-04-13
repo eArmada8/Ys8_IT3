@@ -16,6 +16,7 @@ from lib_fmtibvb import *
 
 # This script outputs non-empty vgmaps by default, change the following line to True to change
 complete_vgmaps_default = False
+ani_fps = 24
 
 def make_fmt(mask, game_version = 1):
     fmt = {'stride': '0', 'topology': 'trianglelist', 'format':\
@@ -381,6 +382,31 @@ def parse_bon3_block (f):
         addr_bone += 64
     return({'mesh_name': mesh_name, 'joints': joints, 'bones': bones})
 
+def parse_kan7_block (f):
+    header = struct.unpack("<10I", f.read(40))
+    raw_blocks = {}
+    for i in range(5):
+        if header[i] > 0:
+            _ = f.seek(4,1) #Block size
+            raw_blocks[i] = parse_data_blocks(f)
+    blocks = {}
+    for i in raw_blocks:
+        with io.BytesIO(raw_blocks[i]) as ff:
+            block = {}
+            block['magic'] = ff.read(4).decode('utf-8')
+            block['check'],_,num_kf,_,block['unit'] = struct.unpack("<5I",ff.read(20))
+            block['keyframes'] = []
+            ff.seek(40,1)
+            for j in range(num_kf):
+                kf = {}
+                kf['data'] = list(struct.unpack('<4f', ff.read(16)))
+                ff.seek(48,1)
+                kf['tick'], = struct.unpack('<I', ff.read(4))
+                ff.seek(4,1)
+                block['keyframes'].append(kf)
+            blocks[i] = block
+    return(blocks)
+
 # Thank you to Kyuuhachi for partially reversing VPA7/VPA8 and sharing his findings with me!
 def parse_vpa78_block (f, block_type):
     count, size1 = struct.unpack("<2I", f.read(8))
@@ -477,11 +503,26 @@ def parse_vpax_block (f, block_type, trim_for_gpu = False):
             section_info.append(mesh)
     return(section_info, mesh_buffers)
 
+def obtain_animation_data (f, it3_contents):
+    global ani_fps
+    kan_blocks = [i for i in range(len(it3_contents)) if it3_contents[i]['type'] in ['KAN7']]
+    ani_struct = []
+    for i in range(len(kan_blocks)):
+        print("Processing animation section {0}".format(it3_contents[kan_blocks[i]]['info_name']))
+        f.seek(it3_contents[kan_blocks[i]]['section_start_offset'],0)
+        ani_data = parse_kan7_block(f)
+        for ani_channel in ani_data:
+            if ani_channel in [0,1,2]:
+                ani_struct.append({'bone': it3_contents[kan_blocks[i]]['info_name'], 'type': ani_channel,\
+                    'inputs': [x['tick']/ani_fps for x in ani_data[ani_channel]['keyframes']],\
+                    'outputs': [x['data'][0:{0:3,1:4,2:3}[ani_channel]] for x in ani_data[ani_channel]['keyframes']]})
+    return(ani_struct)
+
 def obtain_mesh_data (f, it3_contents, it3_filename, preserve_gl_order = False, trim_for_gpu = False):
     vpax_blocks = [i for i in range(len(it3_contents)) if it3_contents[i]['type'] in ['VPA7', 'VPA8', 'VPA9', 'VPAX', 'VP11']]
     meshes = []
     for i in range(len(vpax_blocks)):
-        print("Processing section {0}".format(it3_contents[vpax_blocks[i]]['info_name']))
+        print("Processing mesh section {0}".format(it3_contents[vpax_blocks[i]]['info_name']))
         f.seek(it3_contents[vpax_blocks[i]]['section_start_offset'])
         if it3_contents[vpax_blocks[i]]['type'] in ['VPA7', 'VPA8']:
             it3_contents[vpax_blocks[i]]["data"], mesh_data = parse_vpa78_block(f, it3_contents[vpax_blocks[i]]['type'])
@@ -681,6 +722,8 @@ def parse_it3 (f):
             section_info["data"] = parse_mat6_block(f)
         elif section_info["type"] == 'BON3':
             section_info["data"] = parse_bon3_block(f)
+        #elif section_info["type"] == 'KAN7':
+            #section_info["data"] = parse_kan7_block(f)
         contents.append(section_info)
         f.seek(section_info["section_start_offset"] + section_info["size"], 0) # Move forward to the next section
     return(contents)
