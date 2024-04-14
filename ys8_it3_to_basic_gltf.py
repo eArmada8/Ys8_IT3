@@ -6,12 +6,22 @@
 # For command line options (including option to dump vertices), run:
 # /path/to/python3 ys8_it3_to_basic_gltf.py --help
 #
+# Requires numpy and pyquaternion.
+# These can be installed by:
+# /path/to/python3 -m pip install numpy pyquaternion
+#
 # Requires ys8_it3_export_assets.py and lib_fmtibvb.py, put in the same directory
 #
 # GitHub eArmada8/Ys8_IT3
 
-import io, struct, sys, os, glob, numpy, json
-from ys8_it3_export_assets import *
+try:
+    import io, struct, sys, os, glob, numpy, json
+    from pyquaternion import Quaternion
+    from ys8_it3_export_assets import *
+except ModuleNotFoundError as e:
+    print("Python module missing! {}".format(e.msg))
+    input("Press Enter to abort.")
+    raise   
 
 def obtain_skeleton_data (it3_contents, it3_filename, flip_axis = True):
     nodes = [x for x in it3_contents if x['type'] == 'INFO']
@@ -327,7 +337,10 @@ def process_it3 (it3_filename, flip_axis = True, render_non_skel_meshes = False,
 
 if __name__ == "__main__":
     # Set current directory
-    os.chdir(os.path.abspath(os.path.dirname(__file__)))
+    if getattr(sys, 'frozen', False):
+        os.chdir(os.path.dirname(sys.executable))
+    else:
+        os.chdir(os.path.abspath(os.path.dirname(__file__)))
 
     # If argument given, attempt to export from file in argument
     if len(sys.argv) > 1:

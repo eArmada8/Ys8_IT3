@@ -10,9 +10,14 @@
 #
 # GitHub eArmada8/Ys8_IT3
 
-import struct, math, base64, io, json, os, sys, glob
-from itertools import chain
-from lib_fmtibvb import *
+try:
+    import struct, math, base64, io, json, os, sys, glob
+    from itertools import chain
+    from lib_fmtibvb import *
+except ModuleNotFoundError as e:
+    print("Python module missing! {}".format(e.msg))
+    input("Press Enter to abort.")
+    raise   
 
 # This script outputs non-empty vgmaps by default, change the following line to True to change
 complete_vgmaps_default = False
@@ -793,7 +798,10 @@ def process_it3 (it3_filename, complete_maps = complete_vgmaps_default, preserve
 
 if __name__ == "__main__":
     # Set current directory
-    os.chdir(os.path.abspath(os.path.dirname(__file__)))
+    if getattr(sys, 'frozen', False):
+        os.chdir(os.path.dirname(sys.executable))
+    else:
+        os.chdir(os.path.abspath(os.path.dirname(__file__)))
 
     # If argument given, attempt to export from file in argument
     if len(sys.argv) > 1:
