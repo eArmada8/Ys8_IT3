@@ -121,26 +121,30 @@ def make_vpa8_fmt():
     'InputSlot': '0', 'AlignedByteOffset': '36', 'InputSlotClass': 'per-vertex',\
     'InstanceDataStepRate': '0'}]})
 
-def parse_data_block_new (f, block_size, is_compressed):
-    # TODO: Find out what compression algorithm this is, and implement it using the standard library
-    contents = bytes()
+# C77 aka FALCOM3, thank you to TwnKey
+def parse_data_block_new (f, block_size, uncompressed_block_size, is_compressed):
     if is_compressed:
+        contents = bytearray(uncompressed_block_size)
         start = f.tell()
+        i = 0
         while f.tell() < start + block_size - 4:
             current_byte1, current_byte2 = struct.unpack("<2B", f.read(2))
             if (current_byte1 == 0):
-                contents += f.read(current_byte2)
+                contents[i:i+current_byte2] = f.read(current_byte2)
+                i = i + current_byte2
             else:
-                contents += b''.join([contents[-(current_byte2+1):]\
-                    for x in range((current_byte1 // (current_byte2+1)) + 1)])[0:current_byte1]
-                contents += f.read(1)
+                for _ in range(current_byte1):
+                    contents[i] = contents[i-1-current_byte2]
+                    i = i + 1
+                contents[i:i+1] = f.read(1)
+                i = i + 1
     else:
         contents = f.read(block_size - 4)
     return(contents)
 
 # Thank you to uyjulian, source: https://gist.github.com/uyjulian/a6ba33dc29858327ffa0db57f447abe5
 # Reference: CEgPacks2::UnpackBZMode2
-# Also known as falcom_compress / BZ / BZip / zero method
+# Also known as falcom_compress / BZ / BZip / zero method aka FALCOM2
 def decompress(buffer, output, size):
     offset = 0 # u16
     bits = 8 # 8 to start off with, then 16
@@ -244,7 +248,7 @@ def parse_data_blocks (f):
         for i in range(num_blocks):
             block_size, uncompressed_block_size, block_type = struct.unpack("<3I", f.read(12))
             is_compressed = (block_type == 8)
-            data += parse_data_block_new(f, block_size, is_compressed)
+            data += parse_data_block_new(f, block_size, uncompressed_block_size, is_compressed)
     else: # Thank you to uyjulian, source: https://gist.github.com/uyjulian/a6ba33dc29858327ffa0db57f447abe5
         dst_offset = 0
         compressed_size = flags
@@ -600,7 +604,7 @@ def morton (t, sx, sy):
 
 def unswizzle (texture_data, dwHeight, dwWidth, block_size):
     morton_seq = [morton(x,8,8) for x in range(64)]
-    output = bytearray(dwHeight * dwWidth)
+    output = bytearray(dwHeight * dwWidth // (16 // block_size))
     data_index = 0
     for y in range(((dwHeight // 4) + 7) // 8):
         for x in range(((dwWidth // 4) + 7) // 8):
