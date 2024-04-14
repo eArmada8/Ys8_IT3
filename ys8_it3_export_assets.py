@@ -60,7 +60,7 @@ def make_fmt(mask, game_version = 1):
             else:
                 element['SemanticName'] = 'UNKNOWN'
                 element['SemanticIndex'] = str(semantic_index['UNKNOWN'])
-                if i & 0xF0F0:
+                if 1<<i & 0xF0F0:
                     element['Format'] = 'R8G8B8A8_UINT'
                 else:
                     element['Format'] = 'R32G32B32A32_UINT'
@@ -494,14 +494,20 @@ def parse_vpax_block (f, block_type, trim_for_gpu = False):
         with io.BytesIO(vertices[i]) as vb_stream:
             mesh = {}
             mesh["header"] = {'name': vb_stream.read(4).decode('ASCII'), 'version': struct.unpack("<I", vb_stream.read(4))[0],\
-                'v0': struct.unpack("<4f", vb_stream.read(16)), 'v1': struct.unpack("<4f", vb_stream.read(16)),\
-                'v2': struct.unpack("<4f", vb_stream.read(16)), 'uint0': struct.unpack("<77I", vb_stream.read(308))}
+                'bbox_mid': struct.unpack("<4f", vb_stream.read(16)), 'bbox_min': struct.unpack("<4f", vb_stream.read(16)),\
+                'bbox_max': struct.unpack("<4f", vb_stream.read(16))}
+            mesh["header"]["vertex_count"], mesh["header"]["data_size"], mesh["header"]["total_bitmask"],\
+                mesh["header"]["total_attr"] = struct.unpack("<4I", vb_stream.read(16))
+            mesh["header"]["attr_format"] = list(struct.unpack("<16I", vb_stream.read(64)))
+            mesh["header"]["attr_offset"] = list(struct.unpack("<16I", vb_stream.read(64)))
+            mesh["header"]["attr_stride"] = list(struct.unpack("<16I", vb_stream.read(64)))
+            mesh["header"]["attr_bitmask"] = list(struct.unpack("<16I", vb_stream.read(64)))
+            mesh["header"]["material_id"], = struct.unpack("<I", vb_stream.read(4))
+            mesh["header"]["unk"] = list(struct.unpack("<8I", vb_stream.read(32)))
             if mesh["header"]["name"] == 'VPAC':
-                fmt_struct = make_fmt(mesh["header"]["uint0"][2], game_version = {'VPA9':1, 'VPAX':1, 'VP11':2}[block_type])
-                mesh["material_id"] = mesh["header"]["uint0"][68]
+                fmt_struct = make_fmt(mesh["header"]["total_bitmask"], game_version = {'VPA9':1, 'VPAX':1, 'VP11':2}[block_type])
                 mesh["block_size"] = fmt_struct['stride']
-                mesh["vertex_count"] = mesh["header"]["uint0"][0]
-                #vb = vb_stream.read(mesh["block_size"] * mesh["vertex_count"])
+                #vb = vb_stream.read(mesh["header"]["block_size"] * mesh["header"]["vertex_count"])
                 vb = read_vb_stream(vb_stream.read(), fmt_struct, e = '<')
                 ib = read_ib_stream(indices[i], fmt_struct, e = '<')
                 if trim_for_gpu == True and fmt_struct['stride'] == '160':
