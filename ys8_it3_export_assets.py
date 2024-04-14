@@ -714,7 +714,13 @@ def obtain_textures (f, it3_contents):
         print("Processing texture {0}".format(it3_contents[texi_blocks[i]]['texture_name']))
         start_offset = f.tell()
         it3_contents[texi_blocks[i]]["data"], texture = parse_texi_block(f)
-        tex_block = {'name': it3_contents[texi_blocks[i]]['texture_name'], 'texture': texture}
+        tex_block = {'name': it3_contents[texi_blocks[i]]['texture_name'], 'texture': texture,\
+            'info_name':  it3_contents[texi_blocks[i]]['info_name']}
+        alpha_blocks = [x for x in it3_contents[texi_blocks[i]]["data"] if x['type'] == 'IALP']
+        if len(alpha_blocks) > 0:
+            tex_block['use_alpha'] = alpha_blocks[0]['data']['use_alpha']
+        else:
+            tex_block['use_alpha'] = 0
         f.seek(start_offset)
         tex_block['itp'] = f.read(it3_contents[texi_blocks[i]]['size'] - (start_offset - it3_contents[texi_blocks[i]]['section_start_offset']))
         textures.append(tex_block)
@@ -783,17 +789,24 @@ def process_it3 (it3_filename, complete_maps = complete_vgmaps_default, preserve
                 write_fmt_ib_vb(meshes[i]["meshes"][j], it3_filename[:-4] +\
                     '/meshes/{0}_{1:02d}'.format(safe_filename, j),\
                     node_list = meshes[i]["node_list"], complete_maps = complete_maps)
-        if not os.path.exists(it3_filename[:-4] + '/textures'):
-            os.mkdir(it3_filename[:-4] + '/textures')
         print("Writing textures")
+        use_alpha = {}
         for i in range(len(textures)):
+            tex_folder = it3_filename[:-4] + '/textures_{}'.format(textures[i]["info_name"])
+            if not tex_folder in use_alpha:
+                use_alpha[tex_folder] = {}
+            if not os.path.exists(tex_folder):
+                os.mkdir(tex_folder)
             safe_filename = "".join([x if x not in "\/:*?<>|" else "_" for x in textures[i]["name"]])
+            use_alpha[tex_folder][safe_filename] = textures[i]["use_alpha"]
             if len(textures[i]["texture"]) > 0:
-                with open(it3_filename[:-4] + '/textures/{0}.dds'.format(safe_filename), 'wb') as f:
+                with open(tex_folder + '/{0}.dds'.format(safe_filename), 'wb') as f:
                     f.write(textures[i]["texture"])
             if always_write_itp ==True or not len(textures[i]["texture"]) > 0:
-                with open(it3_filename[:-4] + '/textures/{0}.itp'.format(safe_filename), 'wb') as f:
+                with open(tex_folder + '/{0}.itp'.format(safe_filename), 'wb') as f:
                     f.write(textures[i]["itp"])
+        for tex_folder in use_alpha:
+            write_struct_to_json(use_alpha[tex_folder], '{}/__alpha_data'.format(tex_folder))
     return
 
 if __name__ == "__main__":
