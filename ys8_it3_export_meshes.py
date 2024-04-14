@@ -563,10 +563,11 @@ def write_fmt_ib_vb (mesh_buffer, filename, node_list = [], complete_maps = Fals
             f.write(json.dumps(vgmap_json, indent=4).encode("utf-8"))
     return
 
-def dds_header (dwHeight, dwWidth, dwPitchOrLinearSize):
+# Currently assumes BC7 - This needs to be fixed
+def dds_header (dwHeight, dwWidth, dwPitchOrLinearSize, dwMipMapCount):
     header_info = {'dwSize': 124, 'dwFlags': 0xA1007, 'dwHeight': dwHeight,\
         'dwWidth': dwWidth, 'dwPitchOrLinearSize': dwPitchOrLinearSize,\
-        'dwDepth': 1, 'dwMipMapCount': 1, 'pixel_format': {'dwSize': 32,\
+        'dwDepth': 1, 'dwMipMapCount': dwMipMapCount, 'pixel_format': {'dwSize': 32,\
         'dwFlags': 0x4, 'dwFourCC': 'DX10', 'dwRGBBitCount': 0, 'dwRBitMask': 0,\
         'dwGBitMask': 0, 'dwBBitMask': 0, 'dwABitMask': 0}, 'dwCaps': 0x1000,\
         'dwCaps2': 0, 'dwCaps3': 0, 'dwCaps4': 0, 'dxt10_header':\
@@ -617,53 +618,75 @@ def unswizzle (texture_data, dwHeight, dwWidth, block_size):
                 data_index += block_size
     return(output)
 
+# ITP information from github.com/Aureole-Suite/Cradle, HUGE thank you to Kyuuhachi
 def parse_texi_block (f):
     section_info = []
     valid_bpps = [0,1,2,4,5,6,7,8,10]
     bpp_multipliers = {0:8,1:8,2:8,4:0x10,5:0x20,6:4,7:8,8:8,10:8}
     texture_data = bytes()
+    num_mipmaps = 0 #DDS convention, count includes the primary texture image
     if f.read(4) == b'ITP\xff':
         while True:
             section = {"type": f.read(4).decode('ASCII')}
             size, = struct.unpack("<I", f.read(4))
             if section["type"] == 'IHDR':
                 section["data"] = {}
-                section["data"]["unk0"], section["data"]["dim1"], section["data"]["dim2"],\
-                    section["data"]["compressed_size"], section["data"]["s1"], section["data"]["bpp"],\
-                    section["data"]["s3"], section["data"]["s4"], section["data"]["type"],\
-                    section["data"]["s6"], section["data"]["unk1"] = struct.unpack("<4I6HI", f.read(32))
+                section["data"]["section_size"], section["data"]["dwWidth"], section["data"]["dwHeight"],\
+                    section["data"]["compressed_size"], section["data"]["itp_revision"], section["data"]["base_format"],\
+                    section["data"]["pixel_format"], section["data"]["pixel_bit_format"], section["data"]["compression_type"],\
+                    section["data"]["multi_plane"], section["data"]["unk1"] = struct.unpack("<4I6HI", f.read(32))
             elif section["type"] == 'IALP':
-                section["data"] = list(struct.unpack("<2I", f.read(8)))
+                section["data"] = {}
+                section["data"]["section_size"], section["data"]["use_alpha"], section["data"]["unk0"] = struct.unpack("<I2H", f.read(8))
             elif section["type"] == 'IMIP':
-                section["data"] = list(struct.unpack("<3I", f.read(12)))
+                section["data"] = {}
+                section["data"]["section_size"], section["data"]["mipmap_type"], section["data"]["num_mipmaps"],\
+                    section["data"]["unk0"] = struct.unpack("<I2HI", f.read(12))
             elif section["type"] == 'IHAS':
                 section["data"] = list(struct.unpack("<2I2f", f.read(16)))
             elif section["type"] == 'IDAT':
                 section["data"] = {}
-                section["data"]["unk0"], section["data"]["unk1"] = struct.unpack("<2I", f.read(8))
+                section["data"]["section_size"], section["data"]["unk0"], section["data"]["mipmap_num"] = struct.unpack("<I2H", f.read(8))
                 ihdr = [x for x in section_info if x['type'] == 'IHDR']
                 if len(ihdr) > 0:
-                    if ((ihdr[0]['data']['type'] & 0xFFFFFF00) | (ihdr[0]['data']['type'] == 2)):
+                    mipmap_num = section["data"]["mipmap_num"]
+                    block_size = {6:8, 8:16, 10:16}[ihdr[0]['data']['base_format']] #BC1, BC3, BC7
+                    if ((ihdr[0]['data']['compression_type'] & 0xFFFFFF00) | (ihdr[0]['data']['compression_type'] == 2)):
                         section["data"]["bug_report"] = 'Not expected in TwnKey\'s code'
-                        section["data"]["unk2"], section["data"]["unk3"] = struct.unpack("<2I", f.read(8))
-                        texture_data = parse_data_blocks(f)
+                        section["data"]["unk1"], section["data"]["unk2"] = struct.unpack("<2I", f.read(8))
+                        texture_data += parse_data_blocks(f)
                     else:
-                        if ihdr[0]['data']['type'] in [1,2,3]:
-                            texture_data = parse_data_blocks(f)
-                        elif ihdr[0]['data']['bpp'] in valid_bpps:
-                            texture_data = f.read(bpp_multipliers[ihdr[0]['data']['bpp']] * ihdr[0]['data']['dim1'] * ihdr[0]['data']['dim2'])
+                        rawtexdata = bytes()
+                        if ihdr[0]['data']['compression_type'] in [1,2,3]:
+                            rawtexdata = parse_data_blocks(f)
+                        elif ihdr[0]['data']['base_format'] in valid_bpps:
+                            # This seems wrong but I don't have any proper data to check, and the header only works for BC7 right now anyway, fix later
+                            rawtexdata = f.read(bpp_multipliers[ihdr[0]['data']['base_format']]\
+                                * (ihdr[0]['data']['dwWidth']>>mipmap_num)\
+                                * (ihdr[0]['data']['dwHeight']>>mipmap_num))
                         else:
                             f.seek(size-8,1)
+                        if len(rawtexdata) > 0:
+                            if ihdr[0]['data']['pixel_format'] == 4:
+                                rawtexdata = unswizzle(rawtexdata, ihdr[0]['data']['dwHeight'], ihdr[0]['data']['dwWidth'], block_size)
+                            texture_data += rawtexdata
+                            num_mipmaps += 1
+                    if mipmap_num == 0:
+                        linear_size = len(texture_data)
                 else:
                     f.seek(size-8,1)
             elif section["type"] == 'IEND':
                 break
             else:
                 f.seek(size,1)
-            section_info.append(section)
+            if section["type"] == 'IDAT':
+                if not 'IDAT' in [x['type'] for x in section_info]:
+                    section_info.append({'type': 'IDAT', 'data': []})
+                section_info[[x['type'] for x in section_info].index('IDAT')]['data'].append(section['data'])
+            else:
+                section_info.append(section)
         if len(texture_data) > 0:
-            texture = dds_header(ihdr[0]['data']['dim1'], ihdr[0]['data']['dim2'], len(texture_data)) +\
-                unswizzle(texture_data, ihdr[0]['data']['dim1'], ihdr[0]['data']['dim2'], 16)
+            texture = dds_header(ihdr[0]['data']['dwHeight'], ihdr[0]['data']['dwWidth'], linear_size, num_mipmaps) + texture_data
         else:
             texture = b''
     else:
