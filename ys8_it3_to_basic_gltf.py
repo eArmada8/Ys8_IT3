@@ -6,12 +6,12 @@
 # For command line options (including option to dump vertices), run:
 # /path/to/python3 ys8_it3_to_basic_gltf.py --help
 #
-# Requires ys8_it3_export_meshes.py and lib_fmtibvb.py, put in the same directory
+# Requires ys8_it3_export_assets.py and lib_fmtibvb.py, put in the same directory
 #
 # GitHub eArmada8/Ys8_IT3
 
 import io, struct, sys, os, glob, numpy, json
-from ys8_it3_export_meshes import *
+from ys8_it3_export_assets import *
 
 def obtain_skeleton_data (it3_contents, it3_filename, flip_axis = True):
     nodes = [x for x in it3_contents if x['type'] == 'INFO']

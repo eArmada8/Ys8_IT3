@@ -11,17 +11,17 @@ I am very thankful for TwnKey, uyjulian, Kyuuhachi, DarkStarSword, and the Kisek
 ## Requirements:
 1. Python 3.10 and newer is required for use of these scripts.  It is free from the Microsoft Store, for Windows users.  For Linux users, please consult your distro.
 3. The output can be imported into Blender using DarkStarSword's amazing plugin: https://github.com/DarkStarSword/3d-fixes/blob/master/blender_3dmigoto.py  ("4D" position and normal data import must be enabled.)
-4. ys8_it3_export_meshes.py is dependent on lib_fmtibvb.py, which must be in the same folder.  
+4. ys8_it3_export_assets.py is dependent on lib_fmtibvb.py, which must be in the same folder.  
 
 ## Usage:
 
-### ys8_it3_export_meshes.py
+### ys8_it3_export_assets.py
 Double click the python script and it will search the current folder for all .it3 files and export the meshes and textures into a folder with the same name as the it3 file.  Additionally, it will output a very incomplete JSON file with metadata, which I am using to understand this format further (there is no practical use just yet).
 
 In regards to textures, for Ys 8 and 9 models (modern TEXI/TEX2 blocks) the script will output DDS files.  Older games, the script will output raw ITP files (Falcom format).  Please use [Cradle](https://github.com/Aureole-Suite/Cradle/releases/) by Kyuuhachi to convert the ITP files into useable PNG files.
 
 **Command line arguments:**
-`ys8_it3_export_meshes.py [-h] [-c] [-t] [-o] it3_filename`
+`ys8_it3_export_assets.py [-h] [-c] [-t] [-o] it3_filename`
 
 `-h, --help`
 Shows help message.
