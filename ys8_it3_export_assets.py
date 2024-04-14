@@ -1,10 +1,10 @@
-# Tool to manipulate Ys VIII models in it3 format.  Dumps meshes for
+# Tool to manipulate Ys VIII models in it3 format.  Dumps meshes, textures and metadata for
 # import into Blender.  Based on TwnKey's dumper (github/TwnKey/YsVIII_model_dump).
 # Usage:  Run by itself without commandline arguments and it will read only the mesh section of
 # every model it finds in the folder and output fmt / ib / vb files.
 #
 # For command line options, run:
-# /path/to/python3 ys8_it3_export_meshes.py --help
+# /path/to/python3 ys8_it3_export_assets.py --help
 #
 # Requires lib_fmtibvb.py, put in the same directory
 #
