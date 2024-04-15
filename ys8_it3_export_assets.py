@@ -299,10 +299,9 @@ def parse_infz_block (f):
     return {'v0': list(struct.unpack("<4f", f.read(16)))}
 
 def parse_bbox_block (f):
-    return {'a': list(struct.unpack("<3f", f.read(12))),\
-        'b': list(struct.unpack("<3f", f.read(12))),\
-        'c': list(struct.unpack("<3f", f.read(12))),\
-        'd': list(struct.unpack("<3f", f.read(12)))}
+    return {'bbox_min': list(struct.unpack("<4f", f.read(16))),\
+        'bbox_max': list(struct.unpack("<4f", f.read(16))),\
+        'bbox_mid': list(struct.unpack("<4f", f.read(16)))}
 
 def parse_chid_block (f):
     block = {}
@@ -341,27 +340,28 @@ def parse_mat6_block (f):
         with io.BytesIO(data) as block:
             magic = block.read(4).decode('ASCII')
             flags, part_size = struct.unpack("<2I", block.read(8))
-            block.seek(28,1)
-            count_parameters, = struct.unpack("<I", block.read(4))
-            block.seek(4,1)
-            count_textures, = struct.unpack("<I", block.read(4))
+            unk0 = struct.unpack("<7I", block.read(28))
+            count_parameters, unk1, count_textures, = struct.unpack("<3I", block.read(12))
             parameters = []
             for j in range(count_parameters):
                 parameters.append(list(struct.unpack("<4f", block.read(16))))
             textures_flags = []
             for j in range(count_textures):
                 textures_flags.append(list(struct.unpack("<7H", block.read(14))))
-            block.seek(part_size,0)
+            unk2 = []
+            remaining_distance = part_size - block.tell()
+            if remaining_distance > 0:
+                unk2 = list(struct.unpack("<{}H".format(remaining_distance//2), block.read(remaining_distance)))
             mate_magic = block.read(4).decode('ASCII')
-            mate_flags, mate_part_size, name_len = struct.unpack("<3I", block.read(12))
-            current_mat_name = block.read(name_len).split(b'\x00')[0].decode('ASCII')
-            name_len, = struct.unpack("<I", block.read(4))
+            mate_flags, mate_part_size, name_len1 = struct.unpack("<3I", block.read(12))
+            current_mat_name = block.read(name_len1).split(b'\x00')[0].decode('ASCII')
+            name_len2, = struct.unpack("<I", block.read(4))
             textures = []
             for j in range(count_textures):
-                textures.append({'name': block.read(name_len).split(b'\x00')[0].decode('ASCII'),\
+                textures.append({'name': block.read(name_len2).split(b'\x00')[0].decode('ASCII'),\
                     'flags': textures_flags[j]})
-        mat_blocks.append({'MATM_flags': flags, 'MATE_flags': mate_flags,\
-            'parameters': parameters, 'textures': textures})
+        mat_blocks.append({'material_name': current_mat_name, 'MATM_flags': flags, 'MATE_flags': mate_flags, \
+            'unk0': unk0, 'unk1': unk1, 'unk2': unk2, 'parameters': parameters, 'textures': textures})
     return(mat_blocks)
 
 def parse_bon3_block (f):
@@ -506,15 +506,15 @@ def parse_vpax_block (f, block_type, trim_for_gpu = False):
             mesh["header"]["unk"] = list(struct.unpack("<8I", vb_stream.read(32)))
             if mesh["header"]["name"] == 'VPAC':
                 fmt_struct = make_fmt(mesh["header"]["total_bitmask"], game_version = {'VPA9':1, 'VPAX':1, 'VP11':2}[block_type])
-                mesh["block_size"] = fmt_struct['stride']
-                #vb = vb_stream.read(mesh["header"]["block_size"] * mesh["header"]["vertex_count"])
+                mesh["block_size"] = int(fmt_struct['stride'])
+                #vb = vb_stream.read(mesh["block_size"] * mesh["header"]["vertex_count"])
                 vb = read_vb_stream(vb_stream.read(), fmt_struct, e = '<')
                 ib = read_ib_stream(indices[i], fmt_struct, e = '<')
                 if trim_for_gpu == True and fmt_struct['stride'] == '160':
                     mesh_buffers.append({'fmt': make_88_fmt(), 'ib': ib,\
                         'vb': [vb[i] for i in [0,1,4,5,6,7,8,9,12,14]]})
                 else:
-                    mesh_buffers.append({'fmt': fmt_struct, 'ib': ib, 'vb': vb})
+                    mesh_buffers.append({'fmt': fmt_struct, 'ib': ib, 'vb': vb, 'material': mesh["header"]["material_id"]})
             section_info.append(mesh)
     return(section_info, mesh_buffers)
 
@@ -535,6 +535,7 @@ def obtain_animation_data (f, it3_contents):
 
 def obtain_mesh_data (f, it3_contents, it3_filename, preserve_gl_order = False, trim_for_gpu = False):
     vpax_blocks = [i for i in range(len(it3_contents)) if it3_contents[i]['type'] in ['VPA7', 'VPA8', 'VPA9', 'VPAX', 'VP11']]
+    mat6_blocks = {it3_contents[i]['info_name']:it3_contents[i]['data'] for i in range(len(it3_contents)) if it3_contents[i]['type'] == 'MAT6'}
     meshes = []
     for i in range(len(vpax_blocks)):
         print("Processing mesh section {0}".format(it3_contents[vpax_blocks[i]]['info_name']))
@@ -546,6 +547,10 @@ def obtain_mesh_data (f, it3_contents, it3_filename, preserve_gl_order = False, 
             it3_contents[vpax_blocks[i]]["data"], mesh_data = parse_vpax_block(f, it3_contents[vpax_blocks[i]]['type'], trim_for_gpu)
             # For some reason Ys VIII starts numbering at 1 (root is node 1, not node 0)
             node_list = [it3_filename[:-4]]
+            if it3_contents[vpax_blocks[i]]['info_name'] in mat6_blocks:
+                for j in range(len(mesh_data)):
+                    if mesh_data[j]['material'] < len(mat6_blocks[it3_contents[vpax_blocks[i]]['info_name']]):
+                        mesh_data[j]['material'] = mat6_blocks[it3_contents[vpax_blocks[i]]['info_name']][mesh_data[j]['material']]
         if preserve_gl_order == False: # Swap triangles from OpenGL to D3D order
             for j in range(len(mesh_data)):
                 mesh_data[j]['ib'] = [[x[0],x[2],x[1]] for x in mesh_data[j]['ib']]
@@ -572,6 +577,9 @@ def write_fmt_ib_vb (mesh_buffer, filename, node_list = [], complete_maps = Fals
                 vgmap_json[node_list[i]] = i
         with open(filename + '.vgmap', 'wb') as f:
             f.write(json.dumps(vgmap_json, indent=4).encode("utf-8"))
+    if 'material' in mesh_buffer and type(mesh_buffer['material']) == dict:
+        with open(filename + '.material', 'wb') as f:
+            f.write(json.dumps(mesh_buffer['material'], indent=4).encode("utf-8"))
     return
 
 # Currently assumes BC7 - This needs to be fixed
