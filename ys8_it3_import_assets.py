@@ -256,33 +256,7 @@ def process_it3 (it3_filename):
         new_it3 = bytes()
         for section in it3_contents:
             # VPA blocks in TEX sections will not be altered - may change if needed in future
-            if section in to_process_tex: 
-                f.seek(it3_contents[section]['offset'])
-                while f.tell() < it3_contents[section]['offset']+it3_contents[section]['length']:
-                    section_info = {}
-                    section_info["type"] = f.read(4).decode('ASCII')
-                    section_info["size"], = struct.unpack("<I",f.read(4))
-                    if (section_info["type"] == 'TEXI'):
-                        f.seek(section_info["size"],1)
-                    else:
-                        new_it3 += section_info["type"].encode() + struct.pack("<I", section_info["size"]) \
-                            + f.read(section_info["size"])
-                tex_folder = it3_filename[:-4] + '/textures_{}'.format(section)
-                if os.path.exists(tex_folder):
-                    textures = [os.path.basename(x) for x in glob.glob(tex_folder + '/*.dds')]
-                    alpha_data = {}
-                    if os.path.exists(tex_folder + '/__alpha_data.json'):
-                        with open(tex_folder + '/__alpha_data.json','rb') as f2:
-                            alpha_data = json.loads(f2.read())
-                    for texture in textures:
-                        use_alpha = alpha_data[texture[:-4]] if texture[:-4] in alpha_data else 0
-                        new_itp = create_texi (texture, tex_folder, use_alpha)
-                        if new_itp != False:
-                            print("Importing {0}.".format(texture))
-                            new_it3 += new_itp
-                        else:
-                            print("Unable to import {}.".format(texture))
-            elif section in to_process_vp:
+            if section in to_process_vp:
                 f.seek(it3_contents[section]['offset'])
                 # Build VPAX, BBOX, MAT6
                 submeshfiles = [x[:-4] for x in glob.glob(it3_filename[:-4] + '/meshes/{}_*.fmt'.format(section))]
@@ -322,12 +296,40 @@ def process_it3 (it3_filename):
                         f.seek(section_info["size"],1)
                         if len(submeshfiles) > 0:
                             new_it3 += mat6_block
+                    elif (section_info["type"] == 'TEXI'):
+                        f.seek(section_info["size"],1)
+                    else:
+                        new_it3 += section_info["type"].encode() + struct.pack("<I", section_info["size"]) \
+                            + f.read(section_info["size"])
+            elif section in to_process_tex: 
+                f.seek(it3_contents[section]['offset'])
+                while f.tell() < it3_contents[section]['offset']+it3_contents[section]['length']:
+                    section_info = {}
+                    section_info["type"] = f.read(4).decode('ASCII')
+                    section_info["size"], = struct.unpack("<I",f.read(4))
+                    if (section_info["type"] == 'TEXI'):
+                        f.seek(section_info["size"],1)
                     else:
                         new_it3 += section_info["type"].encode() + struct.pack("<I", section_info["size"]) \
                             + f.read(section_info["size"])
             else:
                 f.seek(it3_contents[section]['offset'])
                 new_it3 += f.read(it3_contents[section]['length'])
+        # Append all textures to the end of the IT3 file
+        if os.path.exists(it3_filename[:-4] + '/textures'):
+            textures = [os.path.basename(x) for x in glob.glob(it3_filename[:-4] + '/textures/*.dds')]
+            alpha_data = {}
+            if os.path.exists(it3_filename[:-4] + '/textures/__alpha_data.json'):
+                with open(it3_filename[:-4] + '/textures/__alpha_data.json','rb') as f2:
+                    alpha_data = json.loads(f2.read())
+            for texture in textures:
+                use_alpha = alpha_data[texture[:-4]] if texture[:-4] in alpha_data else 0
+                new_itp = create_texi (texture, it3_filename[:-4] + '/textures', use_alpha)
+                if new_itp != False:
+                    print("Importing {0}.".format(texture))
+                    new_it3 += new_itp
+                else:
+                    print("Unable to import {}.".format(texture))
         # Instead of overwriting backups, it will just tag a number onto the end
         backup_suffix = ''
         if os.path.exists(it3_filename + '.bak' + backup_suffix):

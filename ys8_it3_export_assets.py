@@ -20,7 +20,7 @@ except ModuleNotFoundError as e:
     raise   
 
 # This script outputs non-empty vgmaps by default, change the following line to True to change
-complete_vgmaps_default = False
+complete_vgmaps_default = True
 ani_fps = 24
 
 def make_fmt(mask, game_version = 1):
@@ -728,8 +728,7 @@ def obtain_textures (f, it3_contents):
         print("Processing texture {0}".format(it3_contents[texi_blocks[i]]['texture_name']))
         start_offset = f.tell()
         it3_contents[texi_blocks[i]]["data"], texture = parse_texi_block(f)
-        tex_block = {'name': it3_contents[texi_blocks[i]]['texture_name'], 'texture': texture,\
-            'info_name':  it3_contents[texi_blocks[i]]['info_name']}
+        tex_block = {'name': it3_contents[texi_blocks[i]]['texture_name'], 'texture': texture}
         alpha_blocks = [x for x in it3_contents[texi_blocks[i]]["data"] if x['type'] == 'IALP']
         if len(alpha_blocks) > 0:
             tex_block['use_alpha'] = alpha_blocks[0]['data']['use_alpha']
@@ -806,21 +805,17 @@ def process_it3 (it3_filename, complete_maps = complete_vgmaps_default, preserve
         print("Writing textures")
         use_alpha = {}
         for i in range(len(textures)):
-            tex_folder = it3_filename[:-4] + '/textures_{}'.format(textures[i]["info_name"])
-            if not tex_folder in use_alpha:
-                use_alpha[tex_folder] = {}
-            if not os.path.exists(tex_folder):
-                os.mkdir(tex_folder)
+            if not os.path.exists(it3_filename[:-4] + '/textures'):
+                os.mkdir(it3_filename[:-4] + '/textures')
             safe_filename = "".join([x if x not in "\/:*?<>|" else "_" for x in textures[i]["name"]])
-            use_alpha[tex_folder][safe_filename] = textures[i]["use_alpha"]
+            use_alpha[safe_filename] = textures[i]["use_alpha"]
             if len(textures[i]["texture"]) > 0:
-                with open(tex_folder + '/{0}.dds'.format(safe_filename), 'wb') as f:
+                with open(it3_filename[:-4] + '/textures/{0}.dds'.format(safe_filename), 'wb') as f:
                     f.write(textures[i]["texture"])
             if always_write_itp ==True or not len(textures[i]["texture"]) > 0:
-                with open(tex_folder + '/{0}.itp'.format(safe_filename), 'wb') as f:
+                with open(it3_filename[:-4] + '/textures/{0}.itp'.format(safe_filename), 'wb') as f:
                     f.write(textures[i]["itp"])
-        for tex_folder in use_alpha:
-            write_struct_to_json(use_alpha[tex_folder], '{}/__alpha_data'.format(tex_folder))
+            write_struct_to_json(use_alpha, it3_filename[:-4] + '/textures/__alpha_data')
     return
 
 if __name__ == "__main__":
