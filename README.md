@@ -1,8 +1,8 @@
 # Ys VIII / IX IT3 mesh and texture export
-A script to get the mesh data and textures out of IT3 files, hopefully someday I will find a way to get both back into the IT3 file.  The mesh output is in .fmt/.vb/.ib files that are compatible with DarkStarSword Blender import plugin for 3DMigoto, textures are in DDS format, and metadata is in JSON format.  Successfully tested with Ys VIII / IX models so far, with limited support for Ys VII and Ys Memories of Celceta as well.  (It is conceivable that some other games using VPA8 or newer, such as Legend of Nayuta, may be supported, but these games are untested.)
+A script to get the mesh data and textures into and out of IT3 files.  IT3 rebuilding is highly experimental at this time.  The mesh output is in .fmt/.vb/.ib files that are compatible with DarkStarSword Blender import plugin for 3DMigoto, textures are in DDS format, and metadata is in JSON format.  Model extraction is successfully tested with Ys VIII / IX models so far, with limited support for Ys VII and Ys Memories of Celceta as well.  (It is conceivable that some other games using VPA8 or newer, such as Legend of Nayuta, may be supported, but these games are untested.)  Import supports only Ys VIII at this time (and maybe Ys IX, untested).
 
 ## Credits:
-99.9% of my understanding of the IT3 format comes from the reverse engineering work of [TwnKey](https://github.com/TwnKey), and specifically [TwnKey's model dumper](https://github.com/TwnKey/IT3Dumper), for which I am eternally grateful.  Also a huge thank you [uyjulian](https://github.com/uyjulian), for generously giving me the Falcom decompression algorithm from his [IT3 parser](https://gist.github.com/uyjulian/a6ba33dc29858327ffa0db57f447abe5).  Thank you to [Kyuuhachi](https://github.com/Kyuuhachi) for sharing his extensive findings on the structure of ITP and VPA8 as well.
+99.9% of my understanding of the IT3 format comes from the reverse engineering work of [TwnKey](https://github.com/TwnKey), and specifically [TwnKey's model dumper](https://github.com/TwnKey/IT3Dumper), for which I am eternally grateful.  Also a huge thank you [uyjulian](https://github.com/uyjulian), for generously giving me the Falcom bz decompression algorithm from his [IT3 parser](https://gist.github.com/uyjulian/a6ba33dc29858327ffa0db57f447abe5).  Thank you to [Kyuuhachi](https://github.com/Kyuuhachi) for sharing his extensive findings on the structure of ITP and VPA8 as well, and his patient explanations of literally everything.
 
 None of this would be possible without the work of DarkStarSword and his amazing 3DMigoto-Blender plugin, of course.
 
@@ -40,6 +40,17 @@ The default behavior of the script is to output ITP files only if they cannot be
 
 `-o, --overwrite`
 Overwrite existing files without prompting.
+
+### ys8_it3_import_assets.py
+Double click the python script and it will search the current folder for all .it3 files with exported folders, and import the meshes and textures in the folder back into the it3 file.  This script requires a working it3 file already be present as it does not reconstruct the entire file; only the known relevant sections.  The remaining parts of the file (the skeleton and any animation data, etc) are copied unaltered from the intact it3 file.  By default, it will apply c77 compression to the relevant blocks.
+
+It will make a backup of the original, then overwrite the original.  It will not overwrite backups; for example if "model.it3.bak" already exists, then it will write the backup to "model.it3.bak1", then to "model.it3.bak2", and so on.
+
+**Command line arguments:**
+`ys8_it3_import_assets.py [-h] it3_filename`
+
+`-h, --help`
+Shows help message.
 
 ### ys8_it3_to_basic_gltf.py
 Double click the python script to run and it will attempt to convert the IT3 model into a basic glTF model, with skeleton.  This tool as written is for obtaining the skeleton for rigging the .fmt/.ib/.vb/.vgmap meshes from the export tool.  *The meshes included in the model are not particularly useful as they cannot be exported back to IT3,* just delete them and import the exported meshes (.fmt/.ib/.vb./vgmap) instead - the tool only includes meshes because Blender refuses to open a glTF file without meshes.  After importing the meshes, Ctrl-click on the armature and parent (Object -> Parent -> Armature Deform {without the extra options}).
