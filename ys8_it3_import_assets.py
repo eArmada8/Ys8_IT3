@@ -300,8 +300,9 @@ def process_it3 (it3_filename):
                     except FileNotFoundError:
                         print("Submesh {0} not found, skipping...".format(submeshfiles[j]))
                         continue
-                vp_block, bbox_block, materials = create_vpax(submeshes, block_type = 'VPAX')
-                mat6_block = create_mat6(materials)
+                if len(submeshfiles) > 0:
+                    vp_block, bbox_block, materials = create_vpax(submeshes, block_type = 'VPAX')
+                    mat6_block = create_mat6(materials)
                 while f.tell() < it3_contents[section]['offset']+it3_contents[section]['length']:
                     section_info = {}
                     section_info["type"] = f.read(4).decode('ASCII')
@@ -309,15 +310,18 @@ def process_it3 (it3_filename):
                     if (section_info["type"] in ['VPAX', 'VP11']):
                         block_type = section_info["type"]
                         f.seek(section_info["size"],1)
-                        new_it3 += vp_block
+                        if len(submeshfiles) > 0:
+                            new_it3 += vp_block
                     elif (section_info["type"] == 'BBOX'):
                         block_type = section_info["type"]
                         f.seek(section_info["size"],1)
-                        new_it3 += bbox_block
+                        if len(submeshfiles) > 0:
+                            new_it3 += bbox_block
                     elif (section_info["type"] == 'MAT6'):
                         block_type = section_info["type"]
                         f.seek(section_info["size"],1)
-                        new_it3 += mat6_block
+                        if len(submeshfiles) > 0:
+                            new_it3 += mat6_block
                     else:
                         new_it3 += section_info["type"].encode() + struct.pack("<I", section_info["size"]) \
                             + f.read(section_info["size"])
