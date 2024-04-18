@@ -167,7 +167,7 @@ def create_vpax (submeshes, block_type = 'VPAX'):
     for i in range(len(submeshes)):
         if submeshes[i]['fmt']['stride'] == '160' and submeshes[i]['vb'][0]['SemanticName'] == 'POSITION':
             #Enforce correct index size for VPAX and VP11
-            submeshes[i]['fmt']['format'] == {'VPAX': 'DXGI_FORMAT_R16_UINT', 'VP11': 'DXGI_FORMAT_R32_UINT'}[block_type]
+            submeshes[i]['fmt']['format'] = {'VPAX': 'DXGI_FORMAT_R16_UINT', 'VP11': 'DXGI_FORMAT_R32_UINT'}[block_type]
             if not submeshes[i]['material']['material_name'] in [x['material_name'] for x in materials]:
                 materials.append(submeshes[i]['material'])
             bbox_min = [min(x[0] for x in submeshes[i]['vb'][0]['Buffer']), min(x[1] for x in submeshes[i]['vb'][0]['Buffer']), min(x[2] for x in submeshes[i]['vb'][0]['Buffer']), 0.0]
@@ -257,8 +257,12 @@ def process_it3 (it3_filename):
         for section in it3_contents:
             # VPA blocks in TEX sections will not be altered - may change if needed in future
             if section in to_process_vp:
+                if 'VP11' in it3_contents[section]['contents']:
+                    block_type = 'VP11'
+                else:
+                    block_type = 'VPAX'
                 f.seek(it3_contents[section]['offset'])
-                # Build VPAX, BBOX, MAT6
+                # Build VPAX/VP11, BBOX, MAT6
                 submeshfiles = [x[:-4] for x in glob.glob(it3_filename[:-4] + '/meshes/{}_*.fmt'.format(section))]
                 submeshes = []
                 for j in range(len(submeshfiles)):
@@ -275,24 +279,21 @@ def process_it3 (it3_filename):
                         print("Submesh {0} not found, skipping...".format(submeshfiles[j]))
                         continue
                 if len(submeshfiles) > 0:
-                    vp_block, bbox_block, materials = create_vpax(submeshes, block_type = 'VPAX')
+                    vp_block, bbox_block, materials = create_vpax(submeshes, block_type = block_type)
                     mat6_block = create_mat6(materials)
                 while f.tell() < it3_contents[section]['offset']+it3_contents[section]['length']:
                     section_info = {}
                     section_info["type"] = f.read(4).decode('ASCII')
                     section_info["size"], = struct.unpack("<I",f.read(4))
                     if (section_info["type"] in ['VPAX', 'VP11']):
-                        block_type = section_info["type"]
                         f.seek(section_info["size"],1)
                         if len(submeshfiles) > 0:
                             new_it3 += vp_block
                     elif (section_info["type"] == 'BBOX'):
-                        block_type = section_info["type"]
                         f.seek(section_info["size"],1)
                         if len(submeshfiles) > 0:
                             new_it3 += bbox_block
                     elif (section_info["type"] == 'MAT6'):
-                        block_type = section_info["type"]
                         f.seek(section_info["size"],1)
                         if len(submeshfiles) > 0:
                             new_it3 += mat6_block
