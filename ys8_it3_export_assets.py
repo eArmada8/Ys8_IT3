@@ -512,7 +512,8 @@ def parse_vpax_block (f, block_type, trim_for_gpu = False):
                 ib = read_ib_stream(indices[i], fmt_struct, e = '<')
                 if trim_for_gpu == True and fmt_struct['stride'] == '160':
                     mesh_buffers.append({'fmt': make_88_fmt(), 'ib': ib,\
-                        'vb': [vb[i] for i in [0,1,4,5,6,7,8,9,12,14]]})
+                        'vb': [vb[i] for i in [0,1,4,5,6,7,8,9,12,14]],\
+                        'material': mesh["header"]["material_id"]})
                 else:
                     mesh_buffers.append({'fmt': fmt_struct, 'ib': ib, 'vb': vb, 'material': mesh["header"]["material_id"]})
             section_info.append(mesh)

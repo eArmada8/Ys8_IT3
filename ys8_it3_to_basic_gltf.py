@@ -157,6 +157,7 @@ def generate_materials(gltf_data, it3_contents):
             material = {}
             material['name'] = info_name + '_' + str(j)
             if it3_contents[mat_blocks[i]]['type'] == 'MAT6':
+                #material['name'] = it3_contents[mat_blocks[i]]['data'][j]['material_name']
                 for k in range(len(it3_contents[mat_blocks[i]]['data'][j]['textures'])):
                     add_texture = False
                     sampler = { 'wrapS': {0:10497,1:33071,2:33648}[it3_contents[mat_blocks[i]]['data'][j]['textures'][k]['flags'][4]],\
@@ -216,8 +217,8 @@ def write_glTF(filename, it3_contents, mesh_struct, skel_struct, flip_axis = Tru
     material_dict = {}
     for i in range(len(vpax_blocks)):
         material_dict[it3_contents[vpax_blocks[i]]['info_name']] \
-            = [g_material_dict[it3_contents[vpax_blocks[i]]['info_name']+'_'+str(x['material_id'])] for x in it3_contents[vpax_blocks[i]]['data']\
-                if it3_contents[vpax_blocks[i]]['info_name']+'_'+str(x['material_id']) in g_material_dict]
+            = [g_material_dict[it3_contents[vpax_blocks[i]]['info_name']+'_'+str(x['header']['material_id'])] for x in it3_contents[vpax_blocks[i]]['data']\
+                if it3_contents[vpax_blocks[i]]['info_name']+'_'+str(x['header']['material_id']) in g_material_dict]
     for i in range(len(skel_struct)):
         node = {'children': skel_struct[i]['children'], 'name': skel_struct[i]['name'],\
             'matrix': [x for y in numpy.array(skel_struct[i]['rel_matrix']).tolist() for x in y]}
@@ -326,7 +327,7 @@ def process_it3 (it3_filename, flip_axis = True, render_non_skel_meshes = False,
     print("Processing {0}...".format(it3_filename))
     with open(it3_filename, "rb") as f:
         it3_contents = parse_it3(f)
-        it3_contents, mesh_struct = obtain_mesh_data(f, it3_contents, it3_filename, trim_for_gpu = True)
+        it3_contents, mesh_struct = obtain_mesh_data(f, it3_contents, it3_filename, preserve_gl_order = False, trim_for_gpu = True)
     skel_struct = obtain_skeleton_data(it3_contents, it3_filename, flip_axis = flip_axis)
     if os.path.exists(it3_filename[:-4] + '.gltf') and (overwrite == False):
         if str(input(it3_filename[:-4] + ".gltf exists! Overwrite? (y/N) ")).lower()[0:1] == 'y':
