@@ -66,9 +66,9 @@ def compress_data_block(content):
 # Content should be a bytes-like object.
 def create_data_blocks (content):
     segment_size = 0x40000 # Separate into chunks of this size prior to compression
-    uncompressed_sizes = [len(content[i:i+segment_size]) for i in range(0, len(content), segment_size)]
+    uncompressed_sizes = [len(content[i:i+segment_size]) for i in range(0, max(1,len(content)), segment_size)]
     print("Compressing {0} data blocks...".format(len(uncompressed_sizes)))
-    compressed_content = [compress_data_block(content[i:i+segment_size]) for i in range(0, len(content), segment_size)]
+    compressed_content = [compress_data_block(content[i:i+segment_size]) for i in range(0, max(1,len(content)), segment_size)]
     compressed_sizes = [len(x) for x in compressed_content]
     compressed_block = struct.pack("<5I", 0x80000001, len(uncompressed_sizes), sum([x+12 for x in compressed_sizes]),\
         max([x+12 for x in compressed_sizes]), len(content)) +\
@@ -225,6 +225,15 @@ def create_mat6 (materials):
     mat6_block = b'MAT6' + struct.pack("<I", len(compressed_data)) + compressed_data
     return(mat6_block)
 
+# .bonemap files are in the exact same format as .vgmap files.
+def create_bon3 (bonemap, node_name):
+    true_map = list(bonemap.keys())[1:] #Ignore the first entry, as the map starts at 1
+    bon3_block_data = struct.pack("<I", 256) + node_name.encode().ljust(64, b'\x00') \
+        + struct.pack("<I", len(true_map)) \
+        + create_data_blocks(b''.join([x.encode().ljust(64, b'\x00') for x in true_map])) \
+        + create_data_blocks(b'') + create_data_blocks(b'')
+    return(b'BON3' + struct.pack("<I", len(bon3_block_data)) + bon3_block_data)
+
 def rapid_parse_it3 (f):
     file_length = f.seek(0,2)
     f.seek(0,0)
@@ -281,6 +290,11 @@ def process_it3 (it3_filename):
                 if len(submeshfiles) > 0:
                     vp_block, bbox_block, materials = create_vpax(submeshes, block_type = block_type)
                     mat6_block = create_mat6(materials)
+                    custom_bonemap = False
+                    if os.path.exists(it3_filename[:-4] + '/meshes/{}.bonemap'.format(section)):
+                        bonemap = read_struct_from_json(it3_filename[:-4] + '/meshes/{}.bonemap'.format(section))
+                        bon3_block = create_bon3(bonemap, section)
+                        custom_bonemap = True
                 while f.tell() < it3_contents[section]['offset']+it3_contents[section]['length']:
                     section_info = {}
                     section_info["type"] = f.read(4).decode('ASCII')
@@ -297,6 +311,10 @@ def process_it3 (it3_filename):
                         f.seek(section_info["size"],1)
                         if len(submeshfiles) > 0:
                             new_it3 += mat6_block
+                    elif (section_info["type"] == 'BON3') and custom_bonemap == True:
+                        f.seek(section_info["size"],1)
+                        if len(submeshfiles) > 0:
+                            new_it3 += bon3_block
                     elif (section_info["type"] == 'TEXI'):
                         f.seek(section_info["size"],1)
                     else:
