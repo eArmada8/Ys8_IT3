@@ -325,7 +325,7 @@ def parse_mat4_block (f):
     mat_blocks = []
     for i in range(count):
         data_block = io.BytesIO(mat_data[i*0x180:(i+1)*0x180])
-        mat_block = {'name': read_mat4_string(data_block), 'textures': []}
+        mat_block = {'material_name': read_mat4_string(data_block), 'textures': []}
         for _ in range(4): # Cheating here for now, not sure there is anything in the second 0x40 bytes
             name = read_mat4_string(data_block)
             if name != '':
@@ -444,16 +444,15 @@ def parse_vpa78_block (f, block_type):
     for i in range(count):
         mesh = {}
         if block_type == 'VPA7':
-            mesh["header"] = { 'nVerts': p_arr_v[i][0], 'center': p_arr_v[i][1:5], 'v_unk0': p_arr_v[i][5], 'material': p_arr_v[i][6],\
+            mesh["header"] = { 'nVerts': p_arr_v[i][0], 'center': p_arr_v[i][1:5], 'v_unk0': p_arr_v[i][5], 'material_id': p_arr_v[i][6],\
                 'v_unk1': p_arr_v[i][7], 'num_vertices': p_arr_v[i][8], 'min': p_arr_v[i][9:13],\
                 'max': p_arr_v[i][13:17], 'v_unk3': p_arr_v[i][17:21], 'bone_palette': p_arr_v[i][21:29],\
                 'num_indices': p_arr_i[i][0] }
         else: #VPA8
-            mesh["header"] = { 'center': p_arr_v[i][0:4], 'v_unk0': p_arr_v[i][4], 'material': p_arr_v[i][5],\
+            mesh["header"] = { 'center': p_arr_v[i][0:4], 'v_unk0': p_arr_v[i][4], 'material_id': p_arr_v[i][5],\
                 'v_unk1': p_arr_v[i][6], 'num_vertices': p_arr_v[i][7], 'min': p_arr_v[i][8:12],\
                 'max': p_arr_v[i][12:16], 'v_unk3': p_arr_v[i][16:20], 'bone_palette': p_arr_v[i][20:29],\
                 'i_unk0': p_arr_i[i][0], 'num_indices': p_arr_i[i][1], 'i_unk1': p_arr_i[i][2] }
-        mesh["material_id"] = mesh["header"]["material"]
         mesh["block_size"] = fmt_struct['stride']
         mesh["vertex_count"] = mesh["header"]["num_vertices"]
         ib = read_ib_stream(buffer_i[pointer_i:pointer_i+mesh["header"]["num_indices"]*2], fmt_struct)

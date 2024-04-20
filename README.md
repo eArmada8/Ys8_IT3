@@ -69,7 +69,7 @@ Shows help message.
 Ys models has a Y up / -X forward orientation, the default behavior of the glTF conversion is to rotate the models to Z up / Y forward orientation by rotating the base node 90 degrees and transforming the position and normal data.  (The exporter does not do this, the user is expected to select Z up / Y forward on import in Blender so that exports can be used properly in game.  glTF import does not allow axis selection though, so this transform is needed.)  Use this option to override the default behavior and skip the transform.
 
 `-r, --render_no_skel`
-As the Ys models have world objects / bounding boxes etc that have no skeleton, the script by default skips including these since they are not useful in the glTF for weight painting etc.  If this option is invoked, the meshes without skeleton (weight groups) will be included in the glTF.
+As the Ys models have world objects / bounding boxes etc that have no skeleton, the script by default skips including these since they are not useful in the glTF for weight painting etc.  If this option is invoked, the meshes without skeleton (weight groups) will be included in the glTF.  (This filters by RTY2 material variant, removing objects with a value of 8.  Thus non-skeletal objects meant to be rendered, such as eyes, will still be rendered.)
 
 `-o, --overwrite`
 Overwrite existing files without prompting.

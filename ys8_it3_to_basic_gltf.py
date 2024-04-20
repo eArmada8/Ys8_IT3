@@ -155,9 +155,8 @@ def generate_materials(gltf_data, it3_contents):
         for j in range(len(it3_contents[mat_blocks[i]]['data'])):
             add_material = False
             material = {}
-            material['name'] = info_name + '_' + str(j)
+            material['name'] = it3_contents[mat_blocks[i]]['data'][j]['material_name']
             if it3_contents[mat_blocks[i]]['type'] == 'MAT6':
-                #material['name'] = it3_contents[mat_blocks[i]]['data'][j]['material_name']
                 for k in range(len(it3_contents[mat_blocks[i]]['data'][j]['textures'])):
                     add_texture = False
                     sampler = { 'wrapS': {0:10497,1:33071,2:33648}[it3_contents[mat_blocks[i]]['data'][j]['textures'][k]['flags'][4]],\
@@ -216,9 +215,11 @@ def write_glTF(filename, it3_contents, mesh_struct, skel_struct, flip_axis = Tru
     vpax_blocks = [i for i in range(len(it3_contents)) if it3_contents[i]['type'] in ['VPA7', 'VPA8', 'VPA9', 'VPAX', 'VP11']]
     material_dict = {}
     for i in range(len(vpax_blocks)):
+        mat_block = [j for j in range(len(it3_contents)) if it3_contents[j]['type'] in ['MAT4', 'MAT6'] and it3_contents[j]['info_name'] == it3_contents[vpax_blocks[i]]['info_name']][0]
+        local_mat_index = it3_contents[mat_block]
         material_dict[it3_contents[vpax_blocks[i]]['info_name']] \
-            = [g_material_dict[it3_contents[vpax_blocks[i]]['info_name']+'_'+str(x['header']['material_id'])] for x in it3_contents[vpax_blocks[i]]['data']\
-                if it3_contents[vpax_blocks[i]]['info_name']+'_'+str(x['header']['material_id']) in g_material_dict]
+            = [g_material_dict[it3_contents[mat_block]['data'][x['header']['material_id']]['material_name']] for x in it3_contents[vpax_blocks[i]]['data'] \
+                if it3_contents[mat_block]['data'][x['header']['material_id']]['material_name'] in g_material_dict]
     for i in range(len(skel_struct)):
         node = {'children': skel_struct[i]['children'], 'name': skel_struct[i]['name'],\
             'matrix': [x for y in numpy.array(skel_struct[i]['rel_matrix']).tolist() for x in y]}
@@ -227,15 +228,13 @@ def write_glTF(filename, it3_contents, mesh_struct, skel_struct, flip_axis = Tru
         if len(gltf_data['nodes'][i]['children']) == 0:
             del(gltf_data['nodes'][i]['children'])
     for i in range(len(mesh_struct)): # Mesh
-        if len(mesh_struct[i]["node_list"]) > 0:
-            has_skeleton = True
-        else:
-            has_skeleton = False
-        if has_skeleton:
-            global_node_dict = local_to_global_bone_indices(i, mesh_struct, skel_struct)
+        mesh_rty2 = [j for j in range(len(it3_contents)) if it3_contents[j]['type'] == 'RTY2' and it3_contents[j]['info_name'] == it3_contents[vpax_blocks[i]]['info_name']][0]
+        rty2_setting = it3_contents[mesh_rty2]['data']['material_variant']
         primitives = []
-        for j in range(len(mesh_struct[i]["meshes"])): # Submesh
-            if has_skeleton or render_non_skel_meshes == True:
+        mesh_node = [j for j in range(len(gltf_data['nodes']))\
+            if gltf_data['nodes'][j]['name'] == mesh_struct[i]["name"]][0]
+        if rty2_setting != 8 or render_non_skel_meshes == True: # Node list should always have at least one node, even non-skeletal
+            for j in range(len(mesh_struct[i]["meshes"])): # Submesh
                 print("Processing {0} submesh {1}...".format(mesh_struct[i]["name"], j))
                 submesh = convert_submesh_for_gltf(mesh_struct[i]["meshes"][j], flip_axis = flip_axis)
                 gltf_fmt = submesh['fmt']
@@ -295,11 +294,10 @@ def write_glTF(filename, it3_contents, mesh_struct, skel_struct, flip_axis = Tru
                     primitive["material"] = material_dict[mesh_struct[i]["name"]][j]
                 primitives.append(primitive)
                 del(submesh)
-        mesh_node = [j for j in range(len(gltf_data['nodes']))\
-            if gltf_data['nodes'][j]['name'] == mesh_struct[i]["name"]][0]
-        gltf_data['nodes'][mesh_node]['mesh'] = len(gltf_data['meshes'])
-        gltf_data['meshes'].append({"primitives": primitives, "name": mesh_struct[i]["name"]})
-        if has_skeleton:
+            gltf_data['nodes'][mesh_node]['mesh'] = len(gltf_data['meshes'])
+            gltf_data['meshes'].append({"primitives": primitives, "name": mesh_struct[i]["name"]})
+        if len(mesh_struct[i]["node_list"]) > 0:
+            global_node_dict = local_to_global_bone_indices(i, mesh_struct, skel_struct)
             gltf_data['nodes'][mesh_node]['skin'] = len(gltf_data['skins'])
             inv_mtx_buffer = bytes()
             for k in global_node_dict:
