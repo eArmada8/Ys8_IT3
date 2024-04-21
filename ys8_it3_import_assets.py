@@ -256,12 +256,26 @@ def rapid_parse_it3 (f):
     contents[info_section]['length'] = f.tell() - contents[info_section]['offset']
     return(contents)
 
-def process_it3 (it3_filename):
+def return_rty2_material(f, it3_section):
+    f.seek(it3_section['offset'])
+    while f.tell() < it3_section['offset'] + it3_section['length']:
+        magic = f.read(4).decode("ASCII")
+        size, = struct.unpack("<I", f.read(4))
+        if magic == 'RTY2':
+            rty_data = parse_rty2_block(f)
+            return rty_data["material_variant"]
+        else:
+            f.seek(size,1)
+    return -1
+
+def process_it3 (it3_filename, import_noskel = False):
     with open(it3_filename,"rb") as f:
         it3_contents = rapid_parse_it3 (f)
         #Is there ever more than a single TEXI section?
         to_process_tex = [x for x in it3_contents if 'TEXI' in it3_contents[x]['contents']] #TEXF someday?
         to_process_vp = [x for x in it3_contents if any(y in it3_contents[x]['contents'] for y in ['VPAX','VP11'])]
+        if import_noskel == False:
+            to_process_vp = [x for x in to_process_vp if return_rty2_material(f, it3_contents[x]) != 8]
         new_it3 = bytes()
         for section in it3_contents:
             # VPA blocks in TEX sections will not be altered - may change if needed in future
@@ -373,10 +387,11 @@ if __name__ == "__main__":
     if len(sys.argv) > 1:
         import argparse
         parser = argparse.ArgumentParser()
+        parser.add_argument('-n', '--import_noskel', help="Import physics meshes (RTY2 material == 8) from ib/vb instead of it3", action="store_true")
         parser.add_argument('it3_filename', help="Name of it3 file to import into (required).")
         args = parser.parse_args()
         if os.path.exists(args.it3_filename) and args.it3_filename[-4:].lower() == '.it3':
-            process_it3(args.it3_filename)
+            process_it3(args.it3_filename, import_noskel = args.import_noskel)
     else:
         it3_files = glob.glob('*.it3')
         for i in range(len(it3_files)):

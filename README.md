@@ -29,7 +29,7 @@ Shows help message.
 `-p, --partialmaps`
 .vgmap files will have the entire skeleton, with every bone available to the mesh, included with each mesh.  This will result in many empty vertex groups upon import into Blender.  This option will cause the script to only include vertex groups that contain at least one vertex.
 
-`-g, --preserve_gl_order'
+`-g, --preserve_gl_order`
 By default, the script will change the order of the triangles from OpenGL format to Direct3D format (from counter-clockwise to clockwise) for better compatibility with Blender and glTF.  This switch preserves the original index buffer order.  (Note that for import, the order will be converted back, so do not use this option for modding the game.)
 
 `-t, --trim_for_gpu`
@@ -49,6 +49,9 @@ It will make a backup of the original, then overwrite the original.  It will not
 **Command line arguments:**
 `ys8_it3_import_assets.py [-h] it3_filename`
 
+`-n, --import_noskel`
+The default behavior of the script is to skip over non-rendered meshes such as hitboxes and copy those directly from the IT3.  This command will instruct the script to treat those meshes as it would rendered meshes, and import them from .fmt/.ib/.vb (or delete them if the meshes are absent).  If using ys8_it3_to_basic_gltf.py and ys8_gltf_to_meshes.py, be warned that the default behavior of ys8_it3_to_basic_gltf.py is to omit these meshes, so using this option will result in loss of the non-rendered meshes unless you also use the `--render_no_skel` option in ys8_it3_to_basic_gltf.py.
+
 `-h, --help`
 Shows help message.
 
@@ -66,10 +69,29 @@ It will search the current folder for it3 files and convert them all, unless you
 Shows help message.
 
 `-n, --no_axis_flip`
-Ys models has a Y up / -X forward orientation, the default behavior of the glTF conversion is to rotate the models to Z up / Y forward orientation by rotating the base node 90 degrees and transforming the position and normal data.  (The exporter does not do this, the user is expected to select Z up / Y forward on import in Blender so that exports can be used properly in game.  glTF import does not allow axis selection though, so this transform is needed.)  Use this option to override the default behavior and skip the transform.
+Ys models has a Y up / -X forward orientation, the default behavior of the glTF conversion is to rotate the models to Z up / Y forward orientation by rotating the base node 90 degrees and transforming the position, normal and tangent data.  (The exporter does not do this, the user is expected to select Z up / Y forward on import in Blender so that exports can be used properly in game.  glTF import does not allow axis selection though, so this transform is needed.)  Use this option to override the default behavior and skip the transform.
 
 `-r, --render_no_skel`
 As the Ys models have world objects / bounding boxes etc that have no skeleton, the script by default skips including these since they are not useful in the glTF for weight painting etc.  If this option is invoked, the meshes without skeleton (weight groups) will be included in the glTF.  (This filters by RTY2 material variant, removing objects with a value of 8.  Thus non-skeletal objects meant to be rendered, such as eyes, will still be rendered.)
 
 `-o, --overwrite`
 Overwrite existing files without prompting.
+
+### ys8_gltf_to_meshes.py
+Double click the python script to run, and it will attempt to pull the meshes and bone palettes out of each glTF file it finds (.glb or .gltf).  It will write to the same folder that ys8_it3_export_assets.py writes to.  It does not output materials, but it will output a material file with the name of the material in the glTF - each of these files *must* be replaced with a real material from the game.  Textures must be provided (in .dds format) as well.  The script will output a bonemap for writing the BON3 section; if you are not changing the bone palette then delete the .bonemap file to use the original BON3 section from the IT3, especially if your meshes are not rendering.
+
+**Command line arguments:**
+`ys8_gltf_to_meshes.py [-h] [-c] [-o] mdl_filename`
+
+`-h, --help`
+Shows help message.
+
+`-p, --partialmaps`
+.vgmap files will have the entire skeleton, with every bone available to the mesh, included with each mesh.  This will result in many empty vertex groups upon import into Blender.  This option changes the script behavior to only include vertex groups that contain at least one vertex.
+
+`-d, --dontrotate`
+Ys models has a Y up / -X forward orientation.  Since the default behavior of the glTF conversion is to rotate the models to Z up / Y forward orientation, the default behavior of this script is to reverse that rotation by applying a -90 degree rotation on the X axis.  This option instructs the script to skip that step.
+
+`-o, --overwrite`
+Overwrite existing files without prompting.
+
