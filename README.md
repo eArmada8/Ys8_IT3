@@ -1,6 +1,10 @@
 # Ys VIII / IX IT3 mesh and texture export
 A script to get the mesh data and textures into and out of IT3 files.  IT3 rebuilding is highly experimental at this time.  The mesh output is in .fmt/.vb/.ib files that are compatible with DarkStarSword Blender import plugin for 3DMigoto, textures are in DDS format, and metadata is in JSON format.  Model extraction is successfully tested with Ys VIII / IX models so far, with limited support for Ys VII and Ys Memories of Celceta as well.  (It is conceivable that some other games using VPA8 or newer, such as Legend of Nayuta, may be supported, but these games are untested.)  Import supports only Ys VIII / Ys IX models at this time.
 
+## Tutorials:
+
+Please see the [wiki](https://github.com/eArmada8/Ys8_IT3/wiki), and the detailed documentation below.
+
 ## Credits:
 99.9% of my understanding of the IT3 format comes from the reverse engineering work of [TwnKey](https://github.com/TwnKey), and specifically [TwnKey's model dumper](https://github.com/TwnKey/IT3Dumper), for which I am eternally grateful.  Also a huge thank you [uyjulian](https://github.com/uyjulian), for generously giving me the Falcom bz decompression algorithm from his [IT3 parser](https://gist.github.com/uyjulian/a6ba33dc29858327ffa0db57f447abe5).  Thank you to [Kyuuhachi](https://github.com/Kyuuhachi) for sharing his extensive findings on the structure of ITP and VPA8 as well, and his patient explanations of literally everything.
 
