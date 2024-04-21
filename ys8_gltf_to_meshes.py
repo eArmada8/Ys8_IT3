@@ -156,7 +156,7 @@ def dump_meshes (mesh_node, gltf, rotate_model = True, complete_maps = True):
         pos_buffer = read_stream(gltf, accessor)
         num_vertices = len(pos_buffer)
         if len(pos_buffer[0]) == 3:
-            pos_buffer = [x+[0.0] for x in pos_buffer]
+            pos_buffer = [x+[1.0] for x in pos_buffer]
         submesh['vb'] = [{'SemanticName': SemanticName[0], 'SemanticIndex': SemanticIndex[0], 'Buffer': pos_buffer}]
         for j in range(1,16):
             if j in [1,2,3,11,13,15] or not hasattr(mesh.primitives[i].attributes, Semantics[j]) \
