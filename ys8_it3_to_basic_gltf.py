@@ -89,7 +89,7 @@ def convert_submesh_for_gltf(submesh, flip_axis = True):
     new_semantics = {'BLENDWEIGHTS': 'WEIGHTS', 'BLENDINDICES': 'JOINTS'}
     need_index = ['WEIGHTS', 'JOINTS', 'COLOR', 'TEXCOORD']
     need_fewer_values = {'POSITION': 3, 'NORMAL': 3, 'TEXCOORD': 2}
-    has_axes = ['POSITION', 'NORMAL']
+    has_axes = ['POSITION', 'NORMAL', 'TANGENT']
     normalize = ['NORMAL']
     truncated_dxgi = {2: 'R32G32_FLOAT', 3: 'R32G32B32_FLOAT'}
     for i in range(len(submesh['fmt']['elements'])):
