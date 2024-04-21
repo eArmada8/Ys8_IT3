@@ -159,14 +159,14 @@ def generate_materials(gltf_data, it3_contents):
             if it3_contents[mat_blocks[i]]['type'] == 'MAT6':
                 for k in range(len(it3_contents[mat_blocks[i]]['data'][j]['textures'])):
                     add_texture = False
-                    sampler = { 'wrapS': {0:10497,1:33071,2:33648}[it3_contents[mat_blocks[i]]['data'][j]['textures'][k]['flags'][4]],\
-                        'wrapT': {0:10497,1:33071,2:33648}[it3_contents[mat_blocks[i]]['data'][j]['textures'][k]['flags'][6]] } # This is probably wrong
+                    sampler = { 'wrapS': {0:10497,1:33071,2:33648}[it3_contents[mat_blocks[i]]['data'][j]['textures'][k]['flags'][2]],\
+                        'wrapT': {0:10497,1:33071,2:33648}[it3_contents[mat_blocks[i]]['data'][j]['textures'][k]['flags'][3]] }
                     texture = { 'source': images.index(it3_contents[mat_blocks[i]]['data'][j]['textures'][k]['name']), 'sampler': len(gltf_data['samplers']) }
-                    if it3_contents[mat_blocks[i]]['data'][j]['textures'][k]['flags'][0:3] == [1,0,0]:
+                    if k == 0:
                         material['pbrMetallicRoughness']= { 'baseColorTexture' : { 'index' : len(gltf_data['textures']), 'texCoord': 0 },\
                             'metallicFactor' : 0.0, 'roughnessFactor' : 1.0 }
                         add_texture = True
-                    elif it3_contents[mat_blocks[i]]['data'][j]['textures'][k]['flags'][0:2] == [2,0]:
+                    elif it3_contents[mat_blocks[i]]['data'][j]['textures'][k]['name'] == it3_contents[mat_blocks[i]]['data'][j]['textures'][0]['name']+'n':
                         material['normalTexture'] =  { 'index' : len(gltf_data['textures']), 'texCoord': 0 }
                         add_texture = True
                     if add_texture == True:

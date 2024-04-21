@@ -350,7 +350,7 @@ def parse_mat6_block (f):
                 parameters.append(list(struct.unpack("<4f", block.read(16))))
             textures_flags = []
             for j in range(count_textures):
-                textures_flags.append(list(struct.unpack("<7H", block.read(14))))
+                textures_flags.append(list(struct.unpack("<4I", block.read(16))))
             unk2 = []
             remaining_distance = part_size - block.tell()
             if remaining_distance > 0:

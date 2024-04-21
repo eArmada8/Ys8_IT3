@@ -215,7 +215,7 @@ def create_mat6 (materials):
         part1 = struct.pack("<7I", *materials[i]['unk0']) \
             + struct.pack("<3I", len(materials[i]['parameters']), materials[i]['unk1'], len(materials[i]['textures'])) \
             + b''.join([struct.pack("<4f", *x) for x in materials[i]['parameters']]) \
-            + b''.join([struct.pack("<7H", *x['flags']) for x in materials[i]['textures']]) \
+            + b''.join([struct.pack("<4I", *x['flags']) for x in materials[i]['textures']]) \
             + struct.pack("<{}H".format(len(materials[i]['unk2'])), *materials[i]['unk2'])
         part2 = struct.pack("<I", 64) + materials[i]['material_name'].encode().ljust(64, b'\x00') \
             + struct.pack("<I", 32) + b''.join([x['name'].encode().ljust(32, b'\x00') for x in materials[i]['textures']])
