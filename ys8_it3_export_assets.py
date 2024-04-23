@@ -41,7 +41,7 @@ def make_fmt(mask, game_version = 1):
             elif i == 4:
                 element['SemanticName'] = 'NORMAL'
                 element['Format'] = 'R8G8B8A8_SNORM'
-            elif i == 5 and game_version == 2:
+            elif i == 5:
                 element['SemanticName'] = 'TANGENT'
                 element['Format'] = 'R8G8B8A8_SNORM'
             elif i in [6,7]:
@@ -49,7 +49,7 @@ def make_fmt(mask, game_version = 1):
                 element['SemanticIndex'] = str(semantic_index['COLOR'])
                 element['Format'] = 'R8G8B8A8_UNORM'
                 semantic_index['COLOR'] += 1
-            elif i in [8,9] or (i == 10 and game_version == 2):
+            elif i in [8,9,10]:
                 element['SemanticName'] = 'TEXCOORD'
                 element['SemanticIndex'] = str(semantic_index['TEXCOORD'])
                 element['Format'] = 'R32G32B32A32_FLOAT' #Actually R32G32 but Blender can ignore the padding
