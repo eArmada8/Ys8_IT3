@@ -234,6 +234,12 @@ def create_bon3 (bonemap, node_name):
         + create_data_blocks(b'') + create_data_blocks(b'')
     return(b'BON3' + struct.pack("<I", len(bon3_block_data)) + bon3_block_data)
 
+def create_rty2 (rty2_data):
+    rty2_block_data = struct.pack("<I", rty2_data['material_variant']) \
+        + struct.pack("<B", rty2_data['unknown']) \
+        + struct.pack("<3f", *rty2_data['v0'])
+    return(b'RTY2' + struct.pack("<I", len(rty2_block_data)) + rty2_block_data)
+
 def rapid_parse_it3 (f):
     file_length = f.seek(0,2)
     f.seek(0,0)
@@ -309,6 +315,11 @@ def process_it3 (it3_filename, import_noskel = False):
                         bonemap = read_struct_from_json(it3_filename[:-4] + '/meshes/{}.bonemap'.format(section))
                         bon3_block = create_bon3(bonemap, section)
                         custom_bonemap = True
+                    custom_rty2 = False
+                    if os.path.exists(it3_filename[:-4] + '/meshes/{}.rty2'.format(section)):
+                        rty2_data = read_struct_from_json(it3_filename[:-4] + '/meshes/{}.rty2'.format(section))
+                        rty2_block = create_rty2(rty2_data)
+                        custom_rty2 = True
                 while f.tell() < it3_contents[section]['offset']+it3_contents[section]['length']:
                     section_info = {}
                     section_info["type"] = f.read(4).decode('ASCII')
@@ -329,6 +340,10 @@ def process_it3 (it3_filename, import_noskel = False):
                         f.seek(section_info["size"],1)
                         if len(submeshfiles) > 0:
                             new_it3 += bon3_block
+                    elif (section_info["type"] == 'RTY2') and custom_rty2 == True:
+                        f.seek(section_info["size"],1)
+                        if len(submeshfiles) > 0:
+                            new_it3 += rty2_block
                     elif (section_info["type"] == 'TEXI'):
                         f.seek(section_info["size"],1)
                     else:

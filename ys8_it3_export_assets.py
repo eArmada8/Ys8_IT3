@@ -805,6 +805,11 @@ def process_it3 (it3_filename, complete_maps = complete_vgmaps_default, preserve
                 write_fmt_ib_vb(meshes[i]["meshes"][j], it3_filename[:-4] +\
                     '/meshes/{0}_{1:02d}'.format(safe_filename, j),\
                     node_list = meshes[i]["node_list"], complete_maps = complete_maps)
+            rty2_blocks = [j for j in range(len(it3_contents)) if it3_contents[j]['type'] == 'RTY2'\
+                and it3_contents[j]['info_name'] == meshes[i]["name"]]
+            if len(rty2_blocks) > 0:
+                with open(it3_filename[:-4] + '/meshes/{0}.rty2'.format(safe_filename), 'wb') as f2:
+                    f2.write(json.dumps(it3_contents[rty2_blocks[0]]['data'], indent = 4).encode('utf-8'))
         print("Writing textures")
         use_alpha = {}
         for i in range(len(textures)):
