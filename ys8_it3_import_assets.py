@@ -314,8 +314,7 @@ def process_it3 (it3_filename, import_noskel = False):
                     'vb': read_vb_stream(b''.join([b'\x00' for _ in range(480)]), fmt),\
                     'vgmap': {section:0},\
                     'material': {"material_name": "", "MATM_flags": 65793, "MATE_flags": 65793,\
-                        "unk0": [28,0,0,0,0,0,0], "unk1": 0, "unk2": [0,0,0,0,0,0],
-                        "parameters": [], "textures": []}})
+                        "unk0": [28,0,0,0,0,0,0], "parameters": [], "textures": []}})
                 vp_block, bbox_block, materials = create_vpax(submeshes, block_type = block_type)
                 mat6_block = create_mat6(materials)
                 custom_bonemap = False
