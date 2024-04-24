@@ -364,7 +364,7 @@ def parse_mat6_block (f):
                 textures.append({'name': block.read(name_len2).split(b'\x00')[0].decode('ASCII'),\
                     'flags': textures_flags[j]})
         mat_blocks.append({'material_name': current_mat_name, 'MATM_flags': flags, 'MATE_flags': mate_flags, \
-            'unk0': unk0, 'unk1': unk1, 'unk2': unk2, 'parameters': parameters, 'textures': textures})
+            'unk0': unk0, 'parameters': parameters, 'textures': textures})
     return(mat_blocks)
 
 def parse_bon3_block (f):
