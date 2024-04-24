@@ -307,43 +307,50 @@ def process_it3 (it3_filename, import_noskel = False):
                     except FileNotFoundError:
                         print("Submesh {0} not found, skipping...".format(submeshfiles[j]))
                         continue
-                if len(submeshfiles) > 0:
-                    vp_block, bbox_block, materials = create_vpax(submeshes, block_type = block_type)
-                    mat6_block = create_mat6(materials)
-                    custom_bonemap = False
-                    if os.path.exists(it3_filename[:-4] + '/meshes/{}.bonemap'.format(section)):
-                        bonemap = read_struct_from_json(it3_filename[:-4] + '/meshes/{}.bonemap'.format(section))
-                        bon3_block = create_bon3(bonemap, section)
-                        custom_bonemap = True
-                    custom_rty2 = False
-                    if os.path.exists(it3_filename[:-4] + '/meshes/{}.rty2'.format(section)):
-                        rty2_data = read_struct_from_json(it3_filename[:-4] + '/meshes/{}.rty2'.format(section))
-                        rty2_block = create_rty2(rty2_data)
-                        custom_rty2 = True
+                if len(submeshfiles) == 0:
+                    # Insert an empty mesh
+                    fmt = make_fmt(0xFFFF, {'VPAX':1, 'VP11':2}[block_type])
+                    submeshes.append({'fmt': fmt, 'ib': [],\
+                    'vb': read_vb_stream(b''.join([b'\x00' for _ in range(480)]), fmt),\
+                    'vgmap': {section:0},\
+                    'material': {"material_name": "", "MATM_flags": 65793, "MATE_flags": 65793,\
+                        "unk0": [28,0,0,0,0,0,0], "unk1": 0, "unk2": [0,0,0,0,0,0],
+                        "parameters": [], "textures": []}})
+                vp_block, bbox_block, materials = create_vpax(submeshes, block_type = block_type)
+                mat6_block = create_mat6(materials)
+                custom_bonemap = False
+                if os.path.exists(it3_filename[:-4] + '/meshes/{}.bonemap'.format(section)):
+                    bonemap = read_struct_from_json(it3_filename[:-4] + '/meshes/{}.bonemap'.format(section))
+                    bon3_block = create_bon3(bonemap, section)
+                    custom_bonemap = True
+                custom_rty2 = False
+                if os.path.exists(it3_filename[:-4] + '/meshes/{}.rty2'.format(section)):
+                    rty2_data = read_struct_from_json(it3_filename[:-4] + '/meshes/{}.rty2'.format(section))
+                    rty2_block = create_rty2(rty2_data)
+                    custom_rty2 = True
                 while f.tell() < it3_contents[section]['offset']+it3_contents[section]['length']:
                     section_info = {}
                     section_info["type"] = f.read(4).decode('ASCII')
                     section_info["size"], = struct.unpack("<I",f.read(4))
                     if (section_info["type"] in ['VPAX', 'VP11']):
                         f.seek(section_info["size"],1)
-                        if len(submeshfiles) > 0:
+                        if len(submeshes) > 0:
                             new_it3 += vp_block
                     elif (section_info["type"] == 'BBOX'):
                         f.seek(section_info["size"],1)
-                        if len(submeshfiles) > 0:
+                        if len(submeshes) > 0:
                             new_it3 += bbox_block
                     elif (section_info["type"] == 'MAT6'):
                         f.seek(section_info["size"],1)
-                        if len(submeshfiles) > 0:
+                        if len(submeshes) > 0:
                             new_it3 += mat6_block
                     elif (section_info["type"] == 'BON3') and custom_bonemap == True:
                         f.seek(section_info["size"],1)
-                        if len(submeshfiles) > 0:
+                        if len(submeshes) > 0:
                             new_it3 += bon3_block
                     elif (section_info["type"] == 'RTY2') and custom_rty2 == True:
                         f.seek(section_info["size"],1)
-                        if len(submeshfiles) > 0:
-                            new_it3 += rty2_block
+                        new_it3 += rty2_block
                     elif (section_info["type"] == 'TEXI'):
                         f.seek(section_info["size"],1)
                     else:
