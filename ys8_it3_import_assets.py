@@ -307,7 +307,7 @@ def process_it3 (it3_filename, import_noskel = False):
                     except FileNotFoundError:
                         print("Submesh {0} not found, skipping...".format(submeshfiles[j]))
                         continue
-                if len(submeshfiles) == 0:
+                if len(submeshes) == 0:
                     # Insert an empty mesh
                     fmt = make_fmt(0xFFFF, {'VPAX':1, 'VP11':2}[block_type])
                     submeshes.append({'fmt': fmt, 'ib': [],\
