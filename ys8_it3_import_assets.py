@@ -279,7 +279,7 @@ def process_it3 (it3_filename, import_noskel = False):
         it3_contents = rapid_parse_it3 (f)
         #Is there ever more than a single TEXI section?
         to_process_tex = [x for x in it3_contents if 'TEXI' in it3_contents[x]['contents']] #TEXF someday?
-        to_process_vp = [x for x in it3_contents if any(y in it3_contents[x]['contents'] for y in ['VPAX','VP11'])]
+        to_process_vp = [x for x in it3_contents if any(y in it3_contents[x]['contents'] for y in ['VPA9','VPAX','VP11'])]
         if import_noskel == False:
             to_process_vp = [x for x in to_process_vp if return_rty2_material(f, it3_contents[x]) != 8]
         new_it3 = bytes()
@@ -331,7 +331,7 @@ def process_it3 (it3_filename, import_noskel = False):
                     section_info = {}
                     section_info["type"] = f.read(4).decode('ASCII')
                     section_info["size"], = struct.unpack("<I",f.read(4))
-                    if (section_info["type"] in ['VPAX', 'VP11']):
+                    if (section_info["type"] in ['VPA9', 'VPAX', 'VP11']):
                         f.seek(section_info["size"],1)
                         if len(submeshes) > 0:
                             new_it3 += vp_block
