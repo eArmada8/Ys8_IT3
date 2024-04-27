@@ -6,13 +6,14 @@
 # For command line options, run:
 # /path/to/python3 ys8_it3_export_assets.py --help
 #
-# Requires lib_fmtibvb.py, put in the same directory
+# Requires lib_falcompress.py and lib_fmtibvb.py, put in the same directory
 #
 # GitHub eArmada8/Ys8_IT3
 
 try:
     import struct, math, base64, io, json, os, sys, glob
     from itertools import chain
+    from lib_falcompress import *
     from lib_fmtibvb import *
 except ModuleNotFoundError as e:
     print("Python module missing! {}".format(e.msg))
@@ -128,159 +129,6 @@ def make_vpa8_fmt():
     'SemanticName': 'NORMAL', 'SemanticIndex': '0', 'Format': 'R8G8B8A8_SNORM',\
     'InputSlot': '0', 'AlignedByteOffset': '36', 'InputSlotClass': 'per-vertex',\
     'InstanceDataStepRate': '0'}]})
-
-# C77 aka FALCOM3, thank you to TwnKey
-def parse_data_block_new (f, block_size, uncompressed_block_size, is_compressed):
-    if is_compressed:
-        contents = bytearray(uncompressed_block_size)
-        start = f.tell()
-        i = 0
-        while f.tell() < start + block_size - 4:
-            current_byte1, current_byte2 = struct.unpack("<2B", f.read(2))
-            if (current_byte1 == 0):
-                contents[i:i+current_byte2] = f.read(current_byte2)
-                i = i + current_byte2
-            else:
-                for _ in range(current_byte1):
-                    contents[i] = contents[i-1-current_byte2]
-                    i = i + 1
-                contents[i:i+1] = f.read(1)
-                i = i + 1
-    else:
-        contents = f.read(block_size - 4)
-    return(contents)
-
-# Thank you to uyjulian, source: https://gist.github.com/uyjulian/a6ba33dc29858327ffa0db57f447abe5
-# Reference: CEgPacks2::UnpackBZMode2
-# Also known as falcom_compress / BZ / BZip / zero method aka FALCOM2
-def decompress(buffer, output, size):
-    offset = 0 # u16
-    bits = 8 # 8 to start off with, then 16
-    flags = int.from_bytes(buffer[offset:offset + 2], byteorder="little")
-    offset += 2
-    flags >>= 8
-    outputoffset = 0 # u16
-    def getflag():
-        nonlocal bits
-        nonlocal flags
-        nonlocal offset
-
-        if bits == 0:
-            slice_ = buffer[offset:offset + 2]
-            if len(slice_) < 2:
-                raise Exception("Out of data")
-            flags = int.from_bytes(slice_, byteorder="little")
-            offset += 2
-            bits = 16
-        flag = flags & 1
-        flags >>= 1
-        bits -= 1
-        return flag
-    def setup_run(prev_u_buffer_pos):
-        nonlocal offset
-        nonlocal buffer
-        nonlocal output
-        nonlocal outputoffset
-
-        run = 2 # u16
-        if getflag() == 0:
-            run += 1
-            if getflag() == 0:
-                run += 1
-                if getflag() == 0:
-                    run += 1
-                    if getflag() == 0:
-                        if getflag() == 0:
-                            slice_ = buffer[offset:offset + 1]
-                            if len(slice_) < 1:
-                                raise Exception("Out of data")
-                            run = int.from_bytes(slice_, byteorder="little")
-                            offset += 1
-                            run += 0xE
-                        else:
-                            run = 0
-                            for i in range(3):
-                                run = (run << 1) | getflag()
-                            run += 0x6
-        # Does the 'copy from buffer' thing
-        for i in range(run):
-            output[outputoffset] = output[outputoffset - prev_u_buffer_pos]
-            outputoffset += 1
-    while True:
-        if getflag() != 0: # Call next method to process next flag
-            if getflag() != 0: # Long look-back distance or exit program or repeating sequence (flags = 11)
-                run = 0 # u16
-                for i in range(5): # Load high-order distance from flags (max = 0x31)
-                    run = (run << 1) | getflag()
-                prev_u_buffer_pos = int.from_bytes(buffer[offset:offset + 1], byteorder="little") # Load low-order distance (max = 0xFF)
-                                                                                                                   # Also acts as flag byte
-                                                                                                                   # run = 0 and byte = 0 -> exit program
-                                                                                                                   # run = 0 and byte = 1 -> sequence of repeating bytes
-                offset += 1
-                if run != 0:
-                    prev_u_buffer_pos = prev_u_buffer_pos | (run << 8) # Add high and low order distance (max distance = 0x31FF)
-                    setup_run(prev_u_buffer_pos) # Get run length and finish unpacking (write to output)
-                elif prev_u_buffer_pos > 2: # Is this used? Seems inefficient.
-                    setup_run(prev_u_buffer_pos)
-                elif prev_u_buffer_pos == 0: # Decompression complete. End program.
-                    break
-                else: # Repeating byte
-                    branch = getflag() # True = long repeating sequence (> 30)
-                    for i in range(4):
-                        run = (run << 1) | getflag()
-                    if branch != 0:
-                        run = (run << 0x8) | int.from_bytes(buffer[offset:offset + 1], byteorder="little")  # Load run length from byte and add high-order run length (max = 0xFFF + 0xE)
-                        offset += 1
-                    run += 0xE
-                    output[outputoffset:outputoffset + run] = bytes(buffer[offset:offset + 1]) * run
-                    offset += 1
-                    outputoffset += run
-            else: # Short look-back distance (flags = 10)
-                prev_u_buffer_pos = int.from_bytes(buffer[offset:offset + 1], byteorder="little") # Get the look-back distance (max = 0xFF)
-                offset += 1
-                setup_run(prev_u_buffer_pos) # Get run length and finish unpacking (write to output)
-        else: # Copy byte (flags = 0)
-            output[outputoffset:outputoffset + 1] = buffer[offset:offset + 1]
-            outputoffset += 1
-            offset += 1
-    return outputoffset, offset
-
-def parse_data_blocks (f):
-    # Larger data blocks are segmented prior to compression, not really sure what the rules are here
-    # compressed_size and segment_size are 8 bytes larger than block_size for header?  uncompressed_size is true
-    # size without any padding, as is uncompressed_block_size
-    flags, = struct.unpack("<I", f.read(4))
-    if flags & 0x80000000:
-        num_blocks, compressed_size, segment_size, uncompressed_size = struct.unpack("<4I", f.read(16))
-        data = bytes()
-        for i in range(num_blocks):
-            block_size, uncompressed_block_size, block_type = struct.unpack("<3I", f.read(12))
-            is_compressed = (block_type == 8)
-            data += parse_data_block_new(f, block_size, uncompressed_block_size, is_compressed)
-    else: # Thank you to uyjulian, source: https://gist.github.com/uyjulian/a6ba33dc29858327ffa0db57f447abe5
-        dst_offset = 0
-        compressed_size = flags
-        uncompressed_size, num_blocks = struct.unpack("<2I", f.read(8))
-        dst = bytearray(uncompressed_size) # Should already be initialized with 0
-        cdata = io.BytesIO(f.read(compressed_size - 8))
-        for i in range(num_blocks):
-            block_size = struct.unpack("<H", cdata.read(2))[0]
-            output_tmp = bytearray(65536)
-            inbuf = cdata.read(block_size - 2)
-            if inbuf[0] != 0:
-                raise Exception("Non-zero method currently not supported")
-            num1, num2 = decompress(inbuf, output_tmp, block_size)
-            dst[dst_offset:dst_offset + num1] = output_tmp[0:num1]
-            dst_offset += num1
-            if dst_offset >= uncompressed_size:
-                break
-            x = cdata.read(1)
-            if len(x) == 0:
-                break
-            if x[0] == 0:
-                break
-        data = bytes(dst)
-    return(data)
 
 def parse_info_block (f):
     return {'name': f.read(64).split(b'\x00')[0].decode('ASCII'),\

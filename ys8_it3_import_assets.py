@@ -10,70 +10,19 @@
 # Requires numpy, which can be installed by:
 # /path/to/python3 -m pip install numpy
 #
-# Requires ys8_it3_export_assets.py and lib_fmtibvb.py, put in the same directory
+# Requires ys8_it3_export_assets.py, lib_falcompress.py and lib_fmtibvb.py, put in the same directory
 #
 # GitHub eArmada8/Ys8_IT3
 
 try:
     import struct, os, numpy, shutil, json, sys, glob
     from ys8_it3_export_assets import *
+    from lib_falcompress import *
+    from lib_fmtibvb import *
 except ModuleNotFoundError as e:
     print("Python module missing! {}".format(e.msg))
     input("Press Enter to abort.")
     raise   
-
-# My best attempt at recreating the Ys VIII compression algorithm (C77 aka FALCOM3).
-# Content should be a bytes-like object.
-def compress_data_block(content):
-    #print("Compressing data block.")
-    result = bytes()
-    offset = 0 # First byte of search buffer, anything behind this is already copied to result
-    window = 1 # First byte of look-ahead buffer
-    if len(content) > 2:
-        while window < len(content):
-            if content.find(content[window], offset, window) != -1:
-                byte_matches = [x for x in range(offset, window) if content[x] == content[window]]
-                for i in range(len(byte_matches)):
-                    if content[byte_matches[i]:window] == content[window:(window*2-byte_matches[i])]:
-                        len_repeat = window - byte_matches[i]
-                        num_repeats = 1
-                        while content[byte_matches[i]:window] ==\
-                            content[window + (num_repeats * len_repeat):(window*2-byte_matches[i]) + (num_repeats * len_repeat)]:
-                            num_repeats += 1
-                        num_repeats = min(num_repeats, 255 // len_repeat)
-                        if window + len_repeat * num_repeats >= len(content):
-                            num_repeats -= 1 # Compressed sequence cannot end on a repeat
-                        if len_repeat * num_repeats > 1: # Do not compress doublet bytes, which increase file size
-                            result += struct.pack("<2B", 0, (window-offset)) + content[offset:window] +\
-                                struct.pack("<2B", len_repeat * num_repeats, len_repeat - 1)
-                            offset = window + len_repeat * num_repeats
-                            window = offset + 1 
-                            result += content[offset:window]
-                            offset += 1
-                            break
-            if window - offset >= 255: # In actuality, window == 255 is fine
-                result += struct.pack("<2B", 0, 255) + content[offset:window]
-                offset = window
-            #if (window % (len(content) // 5) == 0):
-                #print("Progress: {0}%".format(round(window * 10 // (len(content)))*10))
-            window += 1
-        if offset < len(content):
-            result += struct.pack("<2B", 0, (window-offset)) + content[offset:window]
-    else:
-        result = content
-    return(result)
-
-# Content should be a bytes-like object.
-def create_data_blocks (content):
-    segment_size = 0x40000 # Separate into chunks of this size prior to compression
-    uncompressed_sizes = [len(content[i:i+segment_size]) for i in range(0, max(1,len(content)), segment_size)]
-    print("Compressing {0} data blocks...".format(len(uncompressed_sizes)))
-    compressed_content = [compress_data_block(content[i:i+segment_size]) for i in range(0, max(1,len(content)), segment_size)]
-    compressed_sizes = [len(x) for x in compressed_content]
-    compressed_block = struct.pack("<5I", 0x80000001, len(uncompressed_sizes), sum([x+12 for x in compressed_sizes]),\
-        max([x+12 for x in compressed_sizes]), len(content)) +\
-        b''.join([(struct.pack("<3I", compressed_sizes[i]+4, uncompressed_sizes[i], 8) + compressed_content[i]) for i in range(len(uncompressed_sizes))])
-    return(compressed_block)
 
 def swizzle (texture_data, dwHeight, dwWidth, block_size):
     morton_seq = [morton(x,8,8) for x in range(64)]
