@@ -1,10 +1,10 @@
-# Library implementation of Falcom's C77 (compression) and bz (compression/decompression).
-# Thank you to Twnkey, uyjulian and Kyuuhachi
-# Usage:  Decompress with parse_data_blocks (f), compress with create_data_blocks (content)
+# Library implementation of Falcom's Mode 3 (C77) and Mode 2 (BZ) algorithms.
+# Thank you to Twnkey, uyjulian and Kyuuhachi (Aureole-Suite)!
+# Usage:  Decompress with parse_data_blocks (f), compress with create_data_blocks (content, mode)
 #
 # GitHub eArmada8/Ys8_IT3
 
-import struct
+import struct, io, array
 
 # C77 aka FALCOM3, thank you to TwnKey
 def parse_data_block_new (f, block_size, uncompressed_block_size, is_compressed):
@@ -201,9 +201,158 @@ def compress_data_block(content):
         result = content
     return(result)
 
+# Source: github.com/Aureole-Suite/Falcompress, thank you to Kyuuhachi
+def compress_mode2(input_):
+    def count_equal (a, b, limit = 4096):
+        aa = a[:limit]
+        bb = b[:limit]
+        if aa == bb:
+            return(len(aa))
+        count = 0
+        for count in range(min(len(aa),len((bb)))):
+            if aa[count] != bb[count]:
+                break
+        return count
+    class Digraphs:
+        def __init__(self, input_):
+            self.input_ = input_ # The data to be compressed
+            self.pos = 0
+            self.head = array.array('H', [0xFFFF]*0x10000)
+            self.next_ = array.array('H', [0xFFFF]*0x2000)
+            self.tail = array.array('H', [0xFFFF]*0x10000)
+        def digraph(self, pos):
+            if pos < len(self.input_):
+                if pos + 1 < len(self.input_):
+                    value, = struct.unpack('<H', self.input_[pos:pos+2])
+                else:
+                    value = self.input_[pos] # Returns an int
+                return (value)
+            else:
+                return False
+        def advance(self):
+            if self.pos >= 0x1FFF:
+                prev_pos = self.pos - 0x1FFF
+                dig = self.digraph(prev_pos)
+                self.head[dig] = self.next_[prev_pos % len(self.next_)]
+            dig = self.digraph(self.pos)
+            if self.head[dig] == 0xFFFF:
+                self.head[dig] = self.pos & 0xFFFF
+            else:
+                self.next_[self.tail[dig]] = self.pos & 0xFFFF
+            self.tail[dig] = (self.pos % len(self.next_)) & 0xFFFF
+            self.next_[self.pos % len(self.next_)] = 0xFFFF
+            self.pos += 1
+            return
+        def get(self, rep_len, rep_pos):
+            pos = self.head[self.digraph(self.pos)]
+            while pos != 0xFFFF:
+                len_ = count_equal(self.input_[self.pos+2:], self.input_[pos+2:], 267) + 2
+                if len_ >= rep_len:
+                    rep_len, rep_pos = len_, pos
+                pos = self.next_[pos % len(self.next_)]
+            return(rep_len, rep_pos)
+    class Bits:
+        def __init__(self, out):
+            self.out = array.array('B',out)
+            self.bit_mask = 0x0080
+            self.bitpos = len(self.out)
+            self.out.extend([0,0])
+        def bit(self, v): #v is boolean
+            self.bit_mask <<= 1
+            self.bit_mask = self.bit_mask & 0xFFFF # Bit mask is u16, this enforces left shift with bit loss
+            if self.bit_mask == 0:
+                self.bitpos = len(self.out)
+                self.out.extend([0,0])
+                self.bit_mask = 0x0001
+            if v:
+                if self.bit_mask < 0x0100:
+                    self.out[self.bitpos] |= self.bit_mask & 0xFF
+                else:
+                    self.out[self.bitpos+1] |= (self.bit_mask >> 8) & 0xFF
+            return(v) #
+        def bits(self, n, v): #n and v are integers
+            assert (v < (1 << n)) #raises an AssertionError
+            for k in range(n - 1, n // 8 * 8 - 1, -1):
+                self.bit((v >> k) & 1 != 0)
+            for k in range(n // 8 - 1, -1, -1):
+                self.out.append((v >> (k * 8)) & 0xFF)
+            return
+        def byte(self, v):
+            self.out.append(v)
+            return
+    # Code start
+    assert(len(input_) < 0xFFFF)
+    input_pos = 0
+    b = Bits(b'')
+    dig = Digraphs(input_)
+    while input_pos < len(input_):
+        run_len = count_equal(input_[input_pos:], input_[input_pos+1:], 0xFFE) + 1
+        if run_len < 14:
+            run_len = 1
+        run_pos = input_pos
+        if (run_len < 64) and (input_pos + 3 < len(input_)):
+            run_len, run_pos = dig.get(run_len, run_pos)
+        assert(run_len > 0)
+        if b.bit(run_len > 1):
+            if run_pos == input_pos:
+                b.bit(True)
+                b.bits(13,1)
+                n = run_len - 14
+                if b.bit(n >= 16):
+                    b.bits(12, n)
+                else:
+                    b.bits(4, n)
+                b.byte(input_[input_pos])
+            else:
+                n = input_pos - run_pos
+                if b.bit(n >= 256):
+                    b.bits(13, n)
+                else:
+                    b.bits(8, n)
+                m = run_len
+                if m >= 3:
+                    b.bit(False)
+                if m >= 4:
+                    b.bit(False)
+                if m >= 5:
+                    b.bit(False)
+                if m >= 6:
+                    b.bit(False)
+                if b.bit(m < 14):
+                    if m >= 6:
+                        b.bits(3, m - 6)
+                else:
+                    b.bits(8, m - 14)
+        else:
+            b.byte(input_[input_pos])
+        for _ in range(run_len):
+            input_pos += 1
+            dig.advance()
+    b.bit(True)
+    b.bit(True)
+    b.bits(13,0)
+    return(b.out.tobytes())
+
+def compress_data_mode2(data):
+    def chunk_bytes(data, chunk_size):
+        if len(data) > 0:
+            return([data[i*chunk_size : (i+1)*chunk_size] for i in range((len(data) - 1) // chunk_size + 1)])
+        else:
+            return False
+    def compressed_chunk(chunk_data):
+        cchunk = compress_mode2(chunk_data)
+        return(struct.pack("<H", len(cchunk) + 2) + cchunk)
+    chunk_data = chunk_bytes(data, 0x7FF0)
+    cdata = bytes()
+    for i in range(len(chunk_data)):
+        print("Compressing data chunk {0} of {1}.".format(i+1, len(chunk_data)))
+        cdata += compressed_chunk(chunk_data[i]) + b'\x01'
+    cdata += compressed_chunk(chunk_data[-1][0].to_bytes()) + b'\x00'
+    return(struct.pack("<3I", len(cdata) + 8, len(data), len(chunk_data) + 1) + cdata)
+
 # Content should be a bytes-like object.
-def create_data_blocks (content, flags = 0x80000001):
-    if flags == 0x80000001:
+def create_data_blocks (content, mode = 3):
+    if mode == 3:
         segment_size = 0x40000 # Separate into chunks of this size prior to compression
         uncompressed_sizes = [len(content[i:i+segment_size]) for i in range(0, max(1,len(content)), segment_size)]
         print("Compressing {0} data blocks...".format(len(uncompressed_sizes)))
@@ -213,6 +362,8 @@ def create_data_blocks (content, flags = 0x80000001):
             max([x+12 for x in compressed_sizes]), len(content)) +\
             b''.join([(struct.pack("<3I", compressed_sizes[i]+4, uncompressed_sizes[i], 8) + compressed_content[i]) for i in range(len(uncompressed_sizes))])
         return(compressed_block)
+    elif mode == 2:
+        return(compress_data_mode2(content))
     else:
-        print("Only C77 currently supported.")
+        print("Only C77 (mode 3) and mode 2 variant of bz currently supported.")
         raise
