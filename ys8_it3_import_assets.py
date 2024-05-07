@@ -40,7 +40,7 @@ def swizzle (texture_data, dwHeight, dwWidth, block_size):
     return(output)
 
 # ITP information from github.com/Aureole-Suite/Cradle, HUGE thank you to Kyuuhachi
-def create_itp (texture_file, use_alpha = 1):
+def create_itp (texture_file, use_alpha = 1, compression_type = 3):
     if os.path.exists(texture_file):
         with open(texture_file, 'rb') as f:
             magic = f.read(4).decode("ASCII")
@@ -67,7 +67,6 @@ def create_itp (texture_file, use_alpha = 1):
                 itp_revision = 3
                 pixel_format = 4 # PS4 Tile / Swizzle
                 pixel_bit_format = 6 # Block Compression
-                compression_type = 3 # C77 compression_type
                 multi_plane = 0 # The only type known
                 if header['pixel_format']['dwFourCC'] == 'DXT1':
                     block_size, base_format = 8, 6
@@ -84,7 +83,7 @@ def create_itp (texture_file, use_alpha = 1):
                 idats = []
                 for i in range(header['dwMipMapCount']):
                     tex_data = create_data_blocks(swizzle(f.read((header['dwHeight']>>i) * (header['dwWidth']>>i) // (16 // block_size)),\
-                        header['dwHeight']>>i, header['dwWidth']>>i, block_size))
+                        header['dwHeight']>>i, header['dwWidth']>>i, block_size), compression_type)
                     idats.append(b'IDAT' + struct.pack("<2I2H", len(tex_data) + 8, 8, 0, i) + tex_data)
                 idat = b''.join(idats)
                 iend = b'IEND\x00\x00\x00\x00'
@@ -96,8 +95,8 @@ def create_itp (texture_file, use_alpha = 1):
     else:
         return(False)
 
-def create_texi (texture, tex_folder, use_alpha = 1):
-    itp_block = create_itp ("{0}/{1}".format(tex_folder, texture), use_alpha)
+def create_texi (texture, tex_folder, use_alpha = 1, compression_type = 3):
+    itp_block = create_itp ("{0}/{1}".format(tex_folder, texture), use_alpha, compression_type)
     if not itp_block is False:
         texi_block = b'TEXI' + struct.pack("<I", len(itp_block)+36) + texture.split('.dds')[0].encode().ljust(36, b'\x00') +\
             itp_block
@@ -105,8 +104,12 @@ def create_texi (texture, tex_folder, use_alpha = 1):
     else:
         return(False)
 
-# Acceptable block types include 'VPAX' and 'VP11'
+# Acceptable block types include 'VPA9', 'VPAX' and 'VP11'
 def create_vpax (submeshes, block_type = 'VPAX'):
+    if block_type == 'VPA9':
+        compression_type = 2
+    else:
+        compression_type = 3
     indices_data = bytes()
     vertices_data = bytes()
     count = 0
@@ -116,11 +119,13 @@ def create_vpax (submeshes, block_type = 'VPAX'):
     for i in range(len(submeshes)):
         if submeshes[i]['fmt']['stride'] == '160' and submeshes[i]['vb'][0]['SemanticName'] == 'POSITION':
             #Enforce correct index size for VPAX and VP11
-            submeshes[i]['fmt']['format'] = {'VPAX': 'DXGI_FORMAT_R16_UINT', 'VP11': 'DXGI_FORMAT_R32_UINT'}[block_type]
+            submeshes[i]['fmt']['format'] = {'VPA9': 'DXGI_FORMAT_R16_UINT', 'VPAX': 'DXGI_FORMAT_R16_UINT', 'VP11': 'DXGI_FORMAT_R32_UINT'}[block_type]
             if not submeshes[i]['material']['material_name'] in [x['material_name'] for x in materials]:
                 materials.append(submeshes[i]['material'])
-            bbox_min = [min(x[0] for x in submeshes[i]['vb'][0]['Buffer']), min(x[1] for x in submeshes[i]['vb'][0]['Buffer']), min(x[2] for x in submeshes[i]['vb'][0]['Buffer']), 0.0]
-            bbox_max = [max(x[0] for x in submeshes[i]['vb'][0]['Buffer']), max(x[1] for x in submeshes[i]['vb'][0]['Buffer']), max(x[2] for x in submeshes[i]['vb'][0]['Buffer']), 0.0]
+            bbox_min = [min(x[0] for x in submeshes[i]['vb'][0]['Buffer']), min(x[1] for x in submeshes[i]['vb'][0]['Buffer']),\
+                min(x[2] for x in submeshes[i]['vb'][0]['Buffer']), 0.0]
+            bbox_max = [max(x[0] for x in submeshes[i]['vb'][0]['Buffer']), max(x[1] for x in submeshes[i]['vb'][0]['Buffer']),\
+                max(x[2] for x in submeshes[i]['vb'][0]['Buffer']), 0.0]
             bbox_mid = [(bbox_min[0]+bbox_max[0])/2, (bbox_min[1]+bbox_max[1])/2, (bbox_min[2]+bbox_max[2])/2, 0.0]
             bbox['min_x'] = min(bbox['min_x'], bbox_min[0])
             bbox['min_y'] = min(bbox['min_y'], bbox_min[1])
@@ -142,13 +147,23 @@ def create_vpax (submeshes, block_type = 'VPAX'):
                 while vb_stream.tell() % 64 > 0:
                     vb_stream.write(b'\x00')
                 vb_stream.seek(0,0)
-                vb_data = create_data_blocks (vb_stream.read())
+                if block_type == 'VPA9':
+                    vb_block = vb_stream.read()
+                    vb_data = b''.join([create_data_blocks(vb_block[i*0x40000:(i+1)*0x40000], compression_type)\
+                        for i in range((len(vb_block)-1)//0x40000+1)])
+                else:
+                    vb_data = create_data_blocks (vb_stream.read(), compression_type)
                 vertices_data += struct.pack("<I", vb_stream.tell()) + vb_data
             with io.BytesIO() as ib_stream:
                 write_ib_stream(submeshes[i]['ib'], ib_stream, submeshes[i]['fmt'], e = '<')
                 ib_stream.seek(0,0)
-                ib_data = create_data_blocks (ib_stream.read())
-                indices_data += struct.pack("<I", ib_stream.tell()//{'VPAX': 2, 'VP11': 4}[block_type]) + ib_data
+                if block_type == 'VPA9':
+                    ib_block = ib_stream.read()
+                    ib_data = b''.join([create_data_blocks(ib_block[i*0x40000:(i+1)*0x40000], compression_type)\
+                        for i in range((len(ib_block)-1)//0x40000+1)])
+                else:
+                    ib_data = create_data_blocks (ib_stream.read(), compression_type)
+                indices_data += struct.pack("<I", ib_stream.tell()//{'VPA9': 2, 'VPAX': 2, 'VP11': 4}[block_type]) + ib_data
             count += 1
     vpax_stream = struct.pack("<I", count) + vertices_data + indices_data
     vpax_block = block_type.encode() + struct.pack("<I", len(vpax_stream)) + vpax_stream
@@ -158,7 +173,7 @@ def create_vpax (submeshes, block_type = 'VPAX'):
     bbox_block = b'BBOX' + struct.pack("<I", 48) + struct.pack("<12f", *[x for y in bbox_array for x in y])
     return(vpax_block, bbox_block, materials)
 
-def create_mat6 (materials):
+def create_mat6 (materials, compression_type = 3):
     compressed_data = struct.pack("<I", len(materials))
     for i in range(len(materials)):
         part1 = struct.pack("<7I", *materials[i]['unk0']) \
@@ -170,17 +185,17 @@ def create_mat6 (materials):
             + struct.pack("<I", 32) + b''.join([x['name'].encode().ljust(32, b'\x00') for x in materials[i]['textures']])
         block = b'MATM' + struct.pack("<2I", materials[i]['MATM_flags'], len(part1)+12) + part1 \
             + b'MATE' + struct.pack("<2I", materials[i]['MATE_flags'], len(part2)+12) + part2
-        compressed_data += struct.pack("<I", len(block)) + create_data_blocks(block) 
+        compressed_data += struct.pack("<I", len(block)) + create_data_blocks(block, compression_type) 
     mat6_block = b'MAT6' + struct.pack("<I", len(compressed_data)) + compressed_data
     return(mat6_block)
 
 # .bonemap files are in the exact same format as .vgmap files.
-def create_bon3 (bonemap, node_name):
+def create_bon3 (bonemap, node_name, compression_type = 3):
     true_map = list(bonemap.keys())[1:] #Ignore the first entry, as the map starts at 1
     bon3_block_data = struct.pack("<I", 256) + node_name.encode().ljust(64, b'\x00') \
         + struct.pack("<I", len(true_map)) \
-        + create_data_blocks(b''.join([x.encode().ljust(64, b'\x00') for x in true_map])) \
-        + create_data_blocks(b'') + create_data_blocks(b'')
+        + create_data_blocks(b''.join([x.encode().ljust(64, b'\x00') for x in true_map]), compression_type) \
+        + create_data_blocks(b'', compression_type) + create_data_blocks(b'', compression_type)
     return(b'BON3' + struct.pack("<I", len(bon3_block_data)) + bon3_block_data)
 
 def create_rty2 (rty2_data):
@@ -232,13 +247,19 @@ def process_it3 (it3_filename, import_noskel = False):
         if import_noskel == False:
             to_process_vp = [x for x in to_process_vp if return_rty2_material(f, it3_contents[x]) != 8]
         new_it3 = bytes()
+        compression_type = 2 # Set a default; I don't think there are any IT3s without VPA sections but just in case
         for section in it3_contents:
             # VPA blocks in TEX sections will not be altered - may change if needed in future
             if section in to_process_vp:
                 if 'VP11' in it3_contents[section]['contents']:
                     block_type = 'VP11'
-                else:
+                    compression_type = 3
+                elif 'VPAX' in it3_contents[section]['contents']:
                     block_type = 'VPAX'
+                    compression_type = 3
+                else:
+                    block_type = 'VPA9'
+                    compression_type = 2
                 f.seek(it3_contents[section]['offset'])
                 # Build VPAX/VP11, BBOX, MAT6
                 submeshfiles = [x[:-4] for x in glob.glob(it3_filename[:-4] + '/meshes/{}_*.fmt'.format(section))]
@@ -258,18 +279,18 @@ def process_it3 (it3_filename, import_noskel = False):
                         continue
                 if len(submeshes) == 0:
                     # Insert an empty mesh
-                    fmt = make_fmt(0xFFFF, {'VPAX':1, 'VP11':2}[block_type])
+                    fmt = make_fmt(0xFFFF, {'VPA9':1, 'VPAX':1, 'VP11':2}[block_type])
                     submeshes.append({'fmt': fmt, 'ib': [],\
                     'vb': read_vb_stream(b''.join([b'\x00' for _ in range(480)]), fmt),\
                     'vgmap': {section:0},\
                     'material': {"material_name": "", "MATM_flags": 65793, "MATE_flags": 65793,\
                         "unk0": [28,0,0,0,0,0,0], "parameters": [], "textures": []}})
                 vp_block, bbox_block, materials = create_vpax(submeshes, block_type = block_type)
-                mat6_block = create_mat6(materials)
+                mat6_block = create_mat6(materials, compression_type)
                 custom_bonemap = False
                 if os.path.exists(it3_filename[:-4] + '/meshes/{}.bonemap'.format(section)):
                     bonemap = read_struct_from_json(it3_filename[:-4] + '/meshes/{}.bonemap'.format(section))
-                    bon3_block = create_bon3(bonemap, section)
+                    bon3_block = create_bon3(bonemap, section, compression_type)
                     custom_bonemap = True
                 custom_rty2 = False
                 if os.path.exists(it3_filename[:-4] + '/meshes/{}.rty2'.format(section)):
@@ -327,7 +348,7 @@ def process_it3 (it3_filename, import_noskel = False):
                     alpha_data = json.loads(f2.read())
             for texture in textures:
                 use_alpha = alpha_data[texture[:-4]] if texture[:-4] in alpha_data else 0
-                new_itp = create_texi (texture, it3_filename[:-4] + '/textures', use_alpha)
+                new_itp = create_texi (texture, it3_filename[:-4] + '/textures', use_alpha, compression_type)
                 if new_itp != False:
                     print("Importing {0}.".format(texture))
                     new_it3 += new_itp

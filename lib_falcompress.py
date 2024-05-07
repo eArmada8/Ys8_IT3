@@ -338,7 +338,7 @@ def compress_data_mode2(data):
         if len(data) > 0:
             return([data[i*chunk_size : (i+1)*chunk_size] for i in range((len(data) - 1) // chunk_size + 1)])
         else:
-            return False
+            return([])
     def compressed_chunk(chunk_data):
         cchunk = compress_mode2(chunk_data)
         return(struct.pack("<H", len(cchunk) + 2) + cchunk)
@@ -347,7 +347,7 @@ def compress_data_mode2(data):
     for i in range(len(chunk_data)):
         print("Compressing data chunk {0} of {1}.".format(i+1, len(chunk_data)))
         cdata += compressed_chunk(chunk_data[i]) + b'\x01'
-    cdata += compressed_chunk(chunk_data[-1][0].to_bytes()) + b'\x00'
+    cdata += compressed_chunk(chunk_data[-1][0].to_bytes()) if len(chunk_data) > 0 else compressed_chunk(b'') + b'\x00'
     return(struct.pack("<3I", len(cdata) + 8, len(data), len(chunk_data) + 1) + cdata)
 
 # Content should be a bytes-like object.
