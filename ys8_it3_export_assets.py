@@ -521,13 +521,13 @@ def parse_texi_block (f):
                 if len(ihdr) > 0:
                     mipmap_num = section["data"]["mipmap_num"]
                     block_size = {6:8, 8:16, 10:16}[ihdr[0]['data']['base_format']] #BC1, BC3, BC7
-                    if ((ihdr[0]['data']['compression_type'] & 0xFFFFFF00) | (ihdr[0]['data']['compression_type'] == 2)):
+                    if (ihdr[0]['data']['compression_type'] & 0xFFFFFF00):
                         section["data"]["bug_report"] = 'Not expected in TwnKey\'s code'
                         section["data"]["unk1"], section["data"]["unk2"] = struct.unpack("<2I", f.read(8))
                         texture_data += parse_data_blocks(f)
                     else:
                         rawtexdata = bytes()
-                        if ihdr[0]['data']['compression_type'] in [1,2,3]:
+                        if ihdr[0]['data']['compression_type'] in [2,3]:
                             rawtexdata = parse_data_blocks(f)
                         elif ihdr[0]['data']['base_format'] in valid_bpps:
                             # This seems wrong but I don't have any proper data to check, and the header only works for BC7 right now anyway, fix later
