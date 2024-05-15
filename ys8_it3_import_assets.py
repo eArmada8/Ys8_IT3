@@ -241,7 +241,32 @@ def return_rty2_material(f, it3_section):
 def process_it3 (it3_filename, import_noskel = False):
     with open(it3_filename,"rb") as f:
         it3_contents = rapid_parse_it3 (f)
-        #Is there ever more than a single TEXI section?
+        # Will read data from JSON file, or load original data from the mdl file if JSON is missing
+        try:
+            material_struct = read_struct_from_json(it3_filename[:-4] + '/materials_metadata.json')
+        except:
+            material_struct = {}
+            print("{0}/materials_metadata.json missing or unreadable, reading data from {0}.it3 instead...".format(it3_filename[:-4]))
+            to_process_mat6 = [x for x in it3_contents if 'MAT6' in it3_contents[x]['contents']]
+            for section in to_process_mat6:
+                mat6 = []
+                rty2 = {}
+                f.seek(it3_contents[section]['offset'])
+                while f.tell() < it3_contents[section]['offset']+it3_contents[section]['length']:
+                    section_info = {}
+                    section_info["type"] = f.read(4).decode('ASCII')
+                    section_info["size"], = struct.unpack("<I",f.read(4))
+                    if (section_info["type"] == 'MAT6'):
+                        mat6 = parse_mat6_block(f)
+                    elif (section_info["type"] == 'RTY2'):
+                        rty2 = parse_rty2_block(f)
+                    else:
+                        f.seek(section_info["size"],1)
+                mats = {}
+                for i in range(len(mat6)):
+                    material_name = mat6[i].pop('material_name')
+                    mats[material_name] = mat6[i]
+                material_struct[section] = {'rty2_shader_assignment': rty2, 'material_parameters': mats}
         to_process_tex = [x for x in it3_contents if 'TEXI' in it3_contents[x]['contents']] #TEXF someday?
         to_process_vp = [x for x in it3_contents if any(y in it3_contents[x]['contents'] for y in ['VPA9','VPAX','VP11'])]
         if import_noskel == False:
@@ -272,7 +297,19 @@ def process_it3 (it3_filename, import_noskel = False):
                         ib = [[x[0],x[2],x[1]] for x in ib] # Swap DirectX triangles back to OpenGL
                         vb = read_vb(submeshfiles[j] + '.vb', fmt)
                         vgmap = read_struct_from_json(submeshfiles[j] + '.vgmap')
-                        material = read_struct_from_json(submeshfiles[j] + '.material')
+                        material_file = read_struct_from_json(submeshfiles[j] + '.material')
+                        material_name = material_file['material_name']
+                        try:
+                            material = material_struct[section]['material_parameters'][material_name]
+                            material['material_name'] = material_name
+                        except KeyError:
+                            print("KeyError: Attempted to add material {0}, but it does not exist in material_metadata.json!".format(material_name))
+                            if 'unk0' in material_file: # Backwards-compatibility with older metadata format
+                                print("Pre-v1.1.0 version metadata detected, importing...")
+                                material = material_file
+                            else:
+                                input("Press Enter to abort.")
+                                raise
                         submeshes.append({'fmt': fmt, 'ib': ib, 'vb': vb, 'vgmap': vgmap, 'material': material})
                     except FileNotFoundError:
                         print("Submesh {0} not found, skipping...".format(submeshfiles[j]))
@@ -293,9 +330,8 @@ def process_it3 (it3_filename, import_noskel = False):
                     bon3_block = create_bon3(bonemap, section, compression_type)
                     custom_bonemap = True
                 custom_rty2 = False
-                if os.path.exists(it3_filename[:-4] + '/meshes/{}.rty2'.format(section)):
-                    rty2_data = read_struct_from_json(it3_filename[:-4] + '/meshes/{}.rty2'.format(section))
-                    rty2_block = create_rty2(rty2_data)
+                if 'rty2_shader_assignment' in material_struct[section]:
+                    rty2_block = create_rty2(material_struct[section]['rty2_shader_assignment'])
                     custom_rty2 = True
                 while f.tell() < it3_contents[section]['offset']+it3_contents[section]['length']:
                     section_info = {}

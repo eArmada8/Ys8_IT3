@@ -313,7 +313,7 @@ def parse_vpa78_block (f, block_type):
         except IndexError:
             print("Unable to convert local bone indices to mesh global, skipping...")
         section_info.append(mesh)
-        mesh_buffers.append({'fmt': fmt_struct, 'ib': ib, 'vb': vb})
+        mesh_buffers.append({'fmt': fmt_struct, 'ib': ib, 'vb': vb, 'material': mesh["header"]["material_id"]})
         pointer_i += mesh["header"]["num_indices"]*2
         pointer_v += mesh["header"]["num_vertices"]*40
     return(section_info, mesh_buffers)
@@ -386,7 +386,7 @@ def obtain_animation_data (f, it3_contents):
 
 def obtain_mesh_data (f, it3_contents, it3_filename, preserve_gl_order = False, trim_for_gpu = False):
     vpax_blocks = [i for i in range(len(it3_contents)) if it3_contents[i]['type'] in ['VPA7', 'VPA8', 'VPA9', 'VPAX', 'VP11']]
-    mat6_blocks = {it3_contents[i]['info_name']:it3_contents[i]['data'] for i in range(len(it3_contents)) if it3_contents[i]['type'] == 'MAT6'}
+    mat_blocks = {it3_contents[i]['info_name']:it3_contents[i]['data'] for i in range(len(it3_contents)) if it3_contents[i]['type'] in ['MAT4', 'MAT6']}
     meshes = []
     for i in range(len(vpax_blocks)):
         print("Processing mesh section {0}".format(it3_contents[vpax_blocks[i]]['info_name']))
@@ -398,10 +398,10 @@ def obtain_mesh_data (f, it3_contents, it3_filename, preserve_gl_order = False, 
             it3_contents[vpax_blocks[i]]["data"], mesh_data = parse_vpax_block(f, it3_contents[vpax_blocks[i]]['type'], trim_for_gpu)
             # For some reason Ys VIII starts numbering at 1 (root is node 1, not node 0)
             node_list = [it3_filename[:-4]]
-            if it3_contents[vpax_blocks[i]]['info_name'] in mat6_blocks:
-                for j in range(len(mesh_data)):
-                    if mesh_data[j]['material'] < len(mat6_blocks[it3_contents[vpax_blocks[i]]['info_name']]):
-                        mesh_data[j]['material'] = mat6_blocks[it3_contents[vpax_blocks[i]]['info_name']][mesh_data[j]['material']]
+        if it3_contents[vpax_blocks[i]]['info_name'] in mat_blocks:
+            for j in range(len(mesh_data)):
+                if mesh_data[j]['material'] < len(mat_blocks[it3_contents[vpax_blocks[i]]['info_name']]):
+                    mesh_data[j]['material'] = mat_blocks[it3_contents[vpax_blocks[i]]['info_name']][mesh_data[j]['material']]
         if preserve_gl_order == False: # Swap triangles from OpenGL to D3D order
             for j in range(len(mesh_data)):
                 mesh_data[j]['ib'] = [[x[0],x[2],x[1]] for x in mesh_data[j]['ib']]
@@ -430,7 +430,7 @@ def write_fmt_ib_vb (mesh_buffer, filename, node_list = [], complete_maps = Fals
             f.write(json.dumps(vgmap_json, indent=4).encode("utf-8"))
     if 'material' in mesh_buffer and type(mesh_buffer['material']) == dict:
         with open(filename + '.material', 'wb') as f:
-            f.write(json.dumps(mesh_buffer['material'], indent=4).encode("utf-8"))
+            f.write(json.dumps({'material_name': mesh_buffer['material']['material_name']}, indent=4).encode("utf-8"))
     return
 
 # Currently assumes BC7 - This needs to be fixed
@@ -643,21 +643,30 @@ def process_it3 (it3_filename, complete_maps = complete_vgmaps_default, preserve
             it3_contents, textures = obtain_textures(f, it3_contents)
             if not os.path.exists(it3_filename[:-4]):
                 os.mkdir(it3_filename[:-4])
-        with open(it3_filename[:-4] + '/container_info.json', 'wb') as f:
-            f.write(json.dumps(it3_contents, indent=4).encode("utf-8"))
+        #with open(it3_filename[:-4] + '/container_info.json', 'wb') as f:
+            #f.write(json.dumps(it3_contents, indent=4).encode("utf-8"))
         if not os.path.exists(it3_filename[:-4] + '/meshes'):
             os.mkdir(it3_filename[:-4] + '/meshes')
+        material_json = {}
         for i in range(len(meshes)):
+            material_block = {}
+            rty2_block = {}
             for j in range(len(meshes[i]["meshes"])):
                 safe_filename = "".join([x if x not in "\/:*?<>|" else "_" for x in meshes[i]["name"]])
                 write_fmt_ib_vb(meshes[i]["meshes"][j], it3_filename[:-4] +\
                     '/meshes/{0}_{1:02d}'.format(safe_filename, j),\
                     node_list = meshes[i]["node_list"], complete_maps = complete_maps)
+                if "material" in meshes[i]["meshes"][j] and type(meshes[i]["meshes"][j]["material"]) == dict:
+                    material_block[meshes[i]["meshes"][j]["material"]["material_name"]] = \
+                        {key:meshes[i]["meshes"][j]["material"][key] for key \
+                        in meshes[i]["meshes"][j]["material"] if key != 'material_name'}
             rty2_blocks = [j for j in range(len(it3_contents)) if it3_contents[j]['type'] == 'RTY2'\
                 and it3_contents[j]['info_name'] == meshes[i]["name"]]
             if len(rty2_blocks) > 0:
-                with open(it3_filename[:-4] + '/meshes/{0}.rty2'.format(safe_filename), 'wb') as f2:
-                    f2.write(json.dumps(it3_contents[rty2_blocks[0]]['data'], indent = 4).encode('utf-8'))
+                rty2_block = it3_contents[rty2_blocks[0]]['data']
+            material_json[meshes[i]["name"]] = {'rty2_shader_assignment': rty2_block, 'material_parameters': material_block}
+        with open(it3_filename[:-4] + '/materials_metadata.json', 'wb') as f2:
+            f2.write(json.dumps(material_json, indent = 4).encode('utf-8'))
         print("Writing textures")
         use_alpha = {}
         for i in range(len(textures)):
