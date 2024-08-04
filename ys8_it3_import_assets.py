@@ -117,7 +117,8 @@ def create_vpax (submeshes, block_type = 'VPAX'):
     bbox = {'min_x': True, 'min_y': True, 'min_z': True, 'max_x': False, 'max_y': False, 'max_z': False}
     materials = []
     for i in range(len(submeshes)):
-        if submeshes[i]['fmt']['stride'] == '160' and submeshes[i]['vb'][0]['SemanticName'] == 'POSITION':
+        stride_semantic = 'vb0 stride' if 'vb0 stride' in submeshes[i]['fmt'] else 'stride'
+        if submeshes[i]['fmt'][stride_semantic] == '160' and submeshes[i]['vb'][0]['SemanticName'] == 'POSITION':
             #Enforce correct index size for VPAX and VP11
             submeshes[i]['fmt']['format'] = {'VPA9': 'DXGI_FORMAT_R16_UINT', 'VPAX': 'DXGI_FORMAT_R16_UINT', 'VP11': 'DXGI_FORMAT_R32_UINT'}[block_type]
             if not submeshes[i]['material']['material_name'] in [x['material_name'] for x in materials]:
@@ -143,7 +144,10 @@ def create_vpax (submeshes, block_type = 'VPAX'):
                 + struct.pack("<9I", [x['material_name'] for x in materials].index(submeshes[i]['material']['material_name']), 0, 0, 0, 0, 0, 0, 0, 0)
             with io.BytesIO() as vb_stream:
                 vb_stream.write(vpac_header)
-                write_vb_stream(submeshes[i]['vb'], vb_stream, submeshes[i]['fmt'], e = '<', interleave = True)
+                if stride_semantic == 'vb0 stride':
+                    write_seg_vb_stream(submeshes[i]['vb'], vb_stream, submeshes[i]['fmt'], '0', e = '<', interleave = True)
+                else:
+                    write_vb_stream(submeshes[i]['vb'], vb_stream, submeshes[i]['fmt'], e = '<', interleave = True)
                 while vb_stream.tell() % 64 > 0:
                     vb_stream.write(b'\x00')
                 vb_stream.seek(0,0)
