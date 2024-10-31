@@ -140,11 +140,12 @@ def parse_rty2_block (f):
         'unknown': struct.unpack("<B", f.read(1))[0],\
         'v0': list(struct.unpack("<3f", f.read(12)))}
 
-def parse_lig3_block (f):
-    return {'v0': list(struct.unpack("<4f", f.read(16))),\
-        'unknown': struct.unpack("<B", f.read(1))[0],\
-        'unknown2': struct.unpack("<f", f.read(4))[0],\
-        'v1': list(struct.unpack("<4f", f.read(16)))}
+def parse_lig3_block (f): #lighting, thank you @lm
+    return {'color': list(struct.unpack("<4f", f.read(16))),\
+        'light_flags': struct.unpack("<B", f.read(1))[0],\
+        'light_intensity': struct.unpack("<f", f.read(4))[0],\
+        'light_angles': list(struct.unpack("<2f", f.read(8))),\
+        'light_ranges': list(struct.unpack("<2f", f.read(8)))}
 
 def parse_infz_block (f):
     return {'v0': list(struct.unpack("<4f", f.read(16)))}
@@ -162,8 +163,9 @@ def parse_chid_block (f):
     return(block)
 
 def parse_jntv_block (f):
-    return {'v0': list(struct.unpack("<4f", f.read(16))),\
-        'id': struct.unpack("<I", f.read(4))[0]}
+    # per @lm: rotation_mode values 1-6 are xyz,xzy,yxz,yzx,zxy,zyx
+    return {'rotation_values': list(struct.unpack("<4f", f.read(16))),\
+        'rotation_mode': struct.unpack("<I", f.read(4))[0]}
 
 def parse_mat4_block (f):
     def read_mat4_string(f):

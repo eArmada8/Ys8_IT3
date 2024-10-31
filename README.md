@@ -10,7 +10,7 @@ Please see the [wiki](https://github.com/eArmada8/Ys8_IT3/wiki), and the detaile
 
 None of this would be possible without the work of DarkStarSword and his amazing 3DMigoto-Blender plugin, of course.
 
-I am very thankful for TwnKey, uyjulian, Kyuuhachi, DarkStarSword, and the Kiseki modding discord for their brilliant work and for sharing that work so freely.
+I am very thankful for TwnKey, uyjulian, Kyuuhachi, lm, DarkStarSword, and the Kiseki modding discord for their brilliant work and for sharing that work so freely.
 
 ## Requirements:
 1. Python 3.10 and newer is required for use of these scripts.  It is free from the Microsoft Store, for Windows users.  For Linux users, please consult your distro.
