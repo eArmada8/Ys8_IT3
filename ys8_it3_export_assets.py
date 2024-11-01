@@ -176,11 +176,11 @@ def parse_mat4_block (f):
     for i in range(count):
         data_block = io.BytesIO(mat_data[i*0x180:(i+1)*0x180])
         mat_block = {'material_name': read_mat4_string(data_block), 'textures': []}
-        for _ in range(4): # Cheating here for now, not sure there is anything in the second 0x40 bytes
+        for _ in range(4): # There appear to be 4 texture slots, many are left blank though.
             name = read_mat4_string(data_block)
-            if name != '':
-                mat_block['textures'].append({'name': name})
-        # 0x40 more bytes to go, but I don't know what they are, flags of some sort
+            mat_block['textures'].append({'name': name})
+        mat_block['float_list'] = list(struct.unpack("<12f", data_block.read(48)))
+        mat_block['unk_values'] = list(struct.unpack("<fifi", data_block.read(16)))
         mat_blocks.append(mat_block)
     return(mat_blocks)
 
