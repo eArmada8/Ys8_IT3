@@ -56,7 +56,7 @@ def make_fmt(mask, game_version = 1):
                 element['Format'] = 'R32G32B32A32_FLOAT' #Actually R32G32 but Blender can ignore the padding
                 semantic_index['TEXCOORD'] += 1
             elif i == 12:
-                element['SemanticName'] = 'BLENDWEIGHTS'
+                element['SemanticName'] = 'BLENDWEIGHT'
                 element['Format'] = 'R8G8B8A8_UNORM'
             elif i == 14:
                 element['SemanticName'] = 'BLENDINDICES'
@@ -101,7 +101,7 @@ def make_88_fmt():
         'InstanceDataStepRate': '0'}, {'id': '7', 'SemanticName': 'TEXCOORD',\
         'SemanticIndex': '1', 'Format': 'R32G32B32A32_FLOAT', 'InputSlot': '0',\
         'AlignedByteOffset': '64', 'InputSlotClass': 'per-vertex',\
-        'InstanceDataStepRate': '0'}, {'id': '8', 'SemanticName': 'BLENDWEIGHTS',\
+        'InstanceDataStepRate': '0'}, {'id': '8', 'SemanticName': 'BLENDWEIGHT',\
         'SemanticIndex': '0', 'Format': 'R8G8B8A8_UNORM', 'InputSlot': '0',\
         'AlignedByteOffset': '80', 'InputSlotClass': 'per-vertex',\
         'InstanceDataStepRate': '0'}, {'id': '9', 'SemanticName': 'BLENDINDICES',\
@@ -123,7 +123,7 @@ def make_vpa8_fmt():
     'InstanceDataStepRate': '0'}, {'id': '5', 'SemanticName': 'BLENDINDICES',\
     'SemanticIndex': '0', 'Format': 'R8G8B8A8_UINT', 'InputSlot': '0',\
     'AlignedByteOffset': '28', 'InputSlotClass': 'per-vertex', 'InstanceDataStepRate': '0'},\
-    {'id': '4', 'SemanticName': 'BLENDWEIGHTS', 'SemanticIndex': '0',\
+    {'id': '4', 'SemanticName': 'BLENDWEIGHT', 'SemanticIndex': '0',\
     'Format': 'R8G8B8A8_SNORM', 'InputSlot': '0', 'AlignedByteOffset': '32',\
     'InputSlotClass': 'per-vertex', 'InstanceDataStepRate': '0'}, {'id': '6',\
     'SemanticName': 'NORMAL', 'SemanticIndex': '0', 'Format': 'R8G8B8A8_SNORM',\

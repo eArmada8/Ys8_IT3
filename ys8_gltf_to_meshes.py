@@ -149,7 +149,7 @@ def dump_meshes (mesh_node, gltf, rotate_model = True, complete_maps = True):
         Semantics = ['POSITION', 'UNKNOWN', 'UNKNOWN', 'UNKNOWN', 'NORMAL', 'TANGENT', 'COLOR_0', 'COLOR_1',\
             'TEXCOORD_0', 'TEXCOORD_1', 'TEXCOORD_2', 'UNKNOWN', 'WEIGHTS_0', 'UNKNOWN', 'JOINTS_0', 'UNKNOWN']
         SemanticName = ['POSITION', 'UNKNOWN', 'UNKNOWN', 'UNKNOWN', 'NORMAL', 'TANGENT', 'COLOR', 'COLOR', 'TEXCOORD',\
-            'TEXCOORD', 'TEXCOORD', 'UNKNOWN', 'BLENDWEIGHTS', 'UNKNOWN', 'BLENDINDICES', 'UNKNOWN']
+            'TEXCOORD', 'TEXCOORD', 'UNKNOWN', 'BLENDWEIGHT', 'UNKNOWN', 'BLENDINDICES', 'UNKNOWN']
         SemanticIndex = ['0', '0', '1', '2', '0', '0', '0', '1', '0', '1', '2', '3', '0', '4', '0', '5']
         # We will assume that POSITION always exists, hopefully this is not foolish.
         accessor = getattr(mesh.primitives[i].attributes, 'POSITION')
