@@ -219,7 +219,8 @@ def write_glTF(filename, it3_contents, mesh_struct, skel_struct, flip_axis = Tru
         local_mat_index = it3_contents[mat_block]
         material_dict[it3_contents[vpax_blocks[i]]['info_name']] \
             = [g_material_dict[it3_contents[mat_block]['data'][x['header']['material_id']]['material_name']] for x in it3_contents[vpax_blocks[i]]['data'] \
-                if it3_contents[mat_block]['data'][x['header']['material_id']]['material_name'] in g_material_dict]
+                if x['header']['material_id'] < len(it3_contents[mat_block]['data']) \
+                and it3_contents[mat_block]['data'][x['header']['material_id']]['material_name'] in g_material_dict]
     for i in range(len(skel_struct)):
         node = {'children': skel_struct[i]['children'], 'name': skel_struct[i]['name'],\
             'matrix': [x for y in numpy.array(skel_struct[i]['rel_matrix']).tolist() for x in y]}
