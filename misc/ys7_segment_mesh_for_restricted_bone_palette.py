@@ -85,11 +85,19 @@ def segment_mesh (mesh_filename, max_group = 4, clean_vg_indices = True):
 
         # Determine the bone palettes to be used for segmentation
         pal_sets = sorted(list(set([tuple(x) for x in palettes])))
-        if any([len(x) > 4 for x in pal_sets]):
-            print("Some triangles have too many groups to properly segment!  Skipping this mesh...")
+        problem_sets_present = False
+        if any([len(x) > max_group for x in pal_sets]):
+            print("Some triangles have too many groups to properly segment!")
+            print("Unsegmentable triangles will be in {0}/{0}_unusable.vb.".format(mesh_filename))
+            print("Please repair the affected vertices *in the original mesh* and run this script again.")
             input("Press Enter to continue.")
-            return False
+            problem_sets_present = True
+            broken_pal_sets = [x for x in pal_sets if len(x) > max_group]
+            pal_sets = [x for x in pal_sets if len(x) <= max_group]
         new_pal_sets = optimal_vertex_group_segments(pal_sets, max_group)
+        if problem_sets_present == True:
+            # The final group will be a fully inclusive palette, used to collect broken triangles
+            new_pal_sets.append(tuple(sorted(list(set([x for y in vb[blendidx]['Buffer'] for x in y])))))
 
         # Determine which palette each triangle will use
         pal_to_use = [[i for i in range(len(new_pal_sets)) if set(palettes[j]).issubset(new_pal_sets[i])][0] for j in range(len(palettes))]
@@ -108,10 +116,13 @@ def segment_mesh (mesh_filename, max_group = 4, clean_vg_indices = True):
             new_ib = [[reverse_vert_map[y] for y in ib[x]] for x in triangles_by_pal[i]]
             if not (os.path.exists(mesh_filename) and os.path.isdir(mesh_filename)):
                 os.mkdir(mesh_filename)
-            write_fmt(fmt, "{0}/{0}_{1:02d}.fmt".format(mesh_filename, i))
-            write_ib(new_ib, "{0}/{0}_{1:02d}.ib".format(mesh_filename, i), fmt)
-            write_vb(new_vb, "{0}/{0}_{1:02d}.vb".format(mesh_filename, i), fmt)
-            open("{0}/{0}_{1:02d}.vgmap".format(mesh_filename, i), 'wb').write(json.dumps(vgmap_by_pal[i],indent=4).encode())
+            submesh_filename = "{0}/{0}_{1:02d}".format(mesh_filename, i)
+            if problem_sets_present == True and i == (len(new_pal_sets) - 1):
+                submesh_filename = "{0}/{0}_unusable".format(mesh_filename)
+            write_fmt(fmt, submesh_filename + '.fmt')
+            write_ib(new_ib, submesh_filename + '.ib', fmt)
+            write_vb(new_vb, submesh_filename + '.vb', fmt)
+            open(submesh_filename + '.vgmap', 'wb').write(json.dumps(vgmap_by_pal[i],indent=4).encode())
     return True
 
 if __name__ == "__main__":
