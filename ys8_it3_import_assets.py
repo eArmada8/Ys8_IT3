@@ -461,12 +461,22 @@ def process_it3 (it3_filename, import_noskel = False):
                         continue
                 if len(submeshes) == 0:
                     # Insert an empty mesh
-                    fmt = make_fmt(0xFFFF, {'VPA9':1, 'VPAX':1, 'VP11':2}[block_type])
-                    submeshes.append({'fmt': fmt, 'ib': [],\
-                    'vb': read_vb_stream(b''.join([b'\x00' for _ in range(480)]), fmt),\
-                    'vgmap': {section:0},\
-                    'material': {"material_name": "", "MATM_flags": 65793, "MATE_flags": 65793,\
-                        "unk0": [28,0,0,0,0,0,0], "parameters": [], "textures": []}})
+                    if block_type in ['VPA9', 'VPAX', 'VP11']:
+                        fmt = make_fmt(0xFFFF, {'VPA9':1, 'VPAX':1, 'VP11':2}[block_type])
+                        submeshes.append({'fmt': fmt, 'ib': [],\
+                        'vb': read_vb_stream(b''.join([b'\x00' for _ in range(480)]), fmt),\
+                        'vgmap': {section:0},\
+                        'material': {"material_name": "", "MATM_flags": 65793, "MATE_flags": 65793,\
+                            "unk0": [28,0,0,0,0,0,0], "parameters": [], "textures": []}})
+                    else: # VPA7 / VPA8
+                        fmt = make_vpa8_fmt()
+                        submeshes.append({'fmt': fmt, 'ib': [[0,0,0]],\
+                        'vb': read_vb_stream(b''.join([b'\x00' for _ in range(40)]), fmt),\
+                        'vgmap': {section:0},\
+                        'material': {"material_name": "",\
+                            "textures": [{"name": ""},{"name": ""},{"name": ""},{"name": ""}],\
+                            "float_list": [1.0,1.0,1.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0],\
+                            "unk_values": [0.0,0,1.0,0]}})
                 if os.path.exists(it3_filename[:-4] + '/meshes/{}.bonemap'.format(safe_sectionname)):
                     bonemap = read_struct_from_json(it3_filename[:-4] + '/meshes/{}.bonemap'.format(safe_sectionname))
                     bon3_block = create_bon3(bonemap, section, compression_type)
