@@ -15,7 +15,7 @@
 # GitHub eArmada8/Ys8_IT3
 
 try:
-    import struct, os, numpy, shutil, json, sys, glob
+    import struct, io, os, numpy, shutil, json, sys, glob
     from ys8_it3_export_assets import *
     from lib_falcompress import *
     from lib_fmtibvb import *
@@ -39,7 +39,7 @@ def swizzle (texture_data, dwHeight, dwWidth, block_size):
                 data_index += block_size
     return(output)
 
-# ITP information from github.com/Aureole-Suite/Cradle, HUGE thank you to Kyuuhachi
+# ITP v3 information from github.com/Aureole-Suite/Cradle, HUGE thank you to Kyuuhachi
 def create_itp (texture_file, use_alpha = 1, compression_type = 3):
     if os.path.exists(texture_file):
         with open(texture_file, 'rb') as f:
@@ -96,13 +96,121 @@ def create_itp (texture_file, use_alpha = 1, compression_type = 3):
         return(False)
 
 def create_texi (texture, tex_folder, use_alpha = 1, compression_type = 3):
-    itp_block = create_itp ("{0}/{1}".format(tex_folder, texture), use_alpha, compression_type)
+    if texture[-4:].lower() == '.dds':
+        itp_block = create_itp ("{0}/{1}".format(tex_folder, texture), use_alpha, compression_type)
+    else:
+        itp_block = open("{0}/{1}".format(tex_folder, texture), 'rb').read()
     if not itp_block is False:
-        texi_block = b'TEXI' + struct.pack("<I", len(itp_block)+36) + texture.split('.dds')[0].encode().ljust(36, b'\x00') +\
+        texi_block = b'TEXI' + struct.pack("<I", len(itp_block)+36) + texture.split('.itp')[0].split('.dds')[0].encode().ljust(36, b'\x00') +\
             itp_block
         return(texi_block)
     else:
         return(False)
+
+# VPA7 is untested
+def create_vpa78 (submeshes, bonemap, block_type = 'VPA8'):
+    compression_type = 2
+    vb_stream = io.BytesIO()
+    ib_stream = io.BytesIO()
+    vertices_metadata = bytearray()
+    indices_metadata = bytearray()
+    count = 0
+    # Initialize bounding box - I have no idea why this works, but it does.
+    bbox = {'min_x': True, 'min_y': True, 'min_z': True, 'max_x': False, 'max_y': False, 'max_z': False}
+    materials = []
+    for i in range(len(submeshes)):
+        stride_semantic = 'vb0 stride' if 'vb0 stride' in submeshes[i]['fmt'] else 'stride'
+        if submeshes[i]['fmt'][stride_semantic] == '40' and submeshes[i]['vb'][0]['SemanticName'] == 'POSITION':
+            #Enforce correct index size for VPAX and VP11
+            submeshes[i]['fmt']['format'] = 'DXGI_FORMAT_R16_UINT'
+            if not submeshes[i]['material']['material_name'] in [x['material_name'] for x in materials]:
+                materials.append(submeshes[i]['material'])
+            #Bounding box
+            bbox_min = [min(x[0] for x in submeshes[i]['vb'][0]['Buffer']), min(x[1] for x in submeshes[i]['vb'][0]['Buffer']),\
+                min(x[2] for x in submeshes[i]['vb'][0]['Buffer']), 1.0]
+            bbox_max = [max(x[0] for x in submeshes[i]['vb'][0]['Buffer']), max(x[1] for x in submeshes[i]['vb'][0]['Buffer']),\
+                max(x[2] for x in submeshes[i]['vb'][0]['Buffer']), 1.0]
+            bbox_mid = [(bbox_min[0]+bbox_max[0])/2, (bbox_min[1]+bbox_max[1])/2, (bbox_min[2]+bbox_max[2])/2, 0.0]
+            bbox['min_x'] = min(bbox['min_x'], bbox_min[0])
+            bbox['min_y'] = min(bbox['min_y'], bbox_min[1])
+            bbox['min_z'] = min(bbox['min_z'], bbox_min[2])
+            bbox['max_x'] = max(bbox['max_x'], bbox_max[0])
+            bbox['max_y'] = max(bbox['max_y'], bbox_max[1])
+            bbox['max_z'] = max(bbox['max_z'], bbox_max[2])
+            #Construct local bone palette
+            semantics = [x['SemanticName'] for x in submeshes[i]['vb']]
+            if 'BLENDINDICES' in semantics:
+                if 'BLENDWEIGHTS' in semantics:
+                    blendwt = semantics.index('BLENDWEIGHTS')
+                else:
+                    blendwt = semantics.index('BLENDWEIGHT')
+                blendidx = semantics.index('BLENDINDICES')
+                palette = sorted(list(set([x for y in [\
+                    [submeshes[i]['vb'][blendidx]['Buffer'][j][k] for k in range(4)]\
+                    for j in range(len(submeshes[i]['vb'][blendidx]['Buffer']))] for x in y])))
+                if len(palette) > 5:
+                    print("Warning!  Bone palette for submesh {} is greater than 4 groups, distortion may result!".format(i))
+                    input("Press Enter to continue.")
+                v_unk3 = [0, 4 if len(palette) == 4 else 5 if len(palette) > 4 else 3, 0, 0]
+                bone_palette_dict = {palette[i]:i for i in range(len(palette))} # 0 should map to 0 (always unused)
+                new_bone_index = [[bone_palette_dict[k] if k in bone_palette_dict else 0 for k in j] for j in submeshes[i]['vb'][blendidx]['Buffer']]
+                submeshes[i]['vb'][blendidx]['Buffer'] = new_bone_index   
+            if block_type == 'VPA8':
+                bone_palette = [x * 3 for x in palette[1:10] + [0]*(10-len(palette))] # Exclude 0 (always unused)
+                vpa8_subheader = [*bbox_mid,
+                    0, # v_unk0
+                    [x['material_name'] for x in materials].index(submeshes[i]['material']['material_name']),
+                    0, # v_unk1
+                    len(submeshes[i]['vb'][0]['Buffer']), # Number of vertices
+                    *bbox_min,
+                    *bbox_max,
+                    *v_unk3,
+                    *bone_palette]
+                vertices_metadata.extend(struct.pack("<4f4I8f13I", *vpa8_subheader))
+                indices_metadata.extend(struct.pack("<3I", 0, len([x for y in submeshes[i]['ib'] for x in y]), 0))
+            else: #VPA7
+                bone_palette = [x * 3 for x in palette[1:9] + [0]*(9-len(palette))] # Exclude 0 (always unused)
+                vpa7_subheader = [len(submeshes[i]['vb'][0]['Buffer']), # Number of vertices - why twice?
+                    *bbox_mid,
+                    0, # v_unk0
+                    [x['material_name'] for x in materials].index(submeshes[i]['material']['material_name']),
+                    0, # v_unk1
+                    len(submeshes[i]['vb'][0]['Buffer']), # Number of vertices
+                    *bbox_min,
+                    *bbox_max,
+                    *v_unk3, # copied from VPA8 as I don't know what the correct values are for VPA7
+                    *bone_palette]
+                vertices_metadata.extend(struct.pack("<I4f4I8f12I", *vpa7_subheader))
+                indices_metadata.extend(struct.pack("<I", len([x for y in submeshes[i]['ib'] for x in y])))
+            write_vb_stream(submeshes[i]['vb'], vb_stream, submeshes[i]['fmt'], e = '<', interleave = True)
+            write_ib_stream(submeshes[i]['ib'], ib_stream, submeshes[i]['fmt'], e = '<')
+            count += 1
+    vb_stream.seek(0,0)
+    vb_block = vb_stream.read()
+    ib_stream.seek(0,0)
+    ib_block = ib_stream.read()
+    if block_type == 'VPA8':
+        vb_data = b''.join([create_data_blocks(vb_block[i*0x40000:(i+1)*0x40000], compression_type)\
+            for i in range((len(vb_block)-1)//0x40000+1)])
+        ib_data = b''.join([create_data_blocks(ib_block[i*0x40000:(i+1)*0x40000], compression_type)\
+            for i in range((len(ib_block)-1)//0x40000+1)])
+        vb_meta = create_data_blocks (vertices_metadata, compression_type)
+        ib_meta = create_data_blocks (indices_metadata, compression_type)
+        vpa_stream = struct.pack("<3I", count, len(vb_block), len(ib_block) * 2) + vb_meta \
+            + vb_data + ib_meta + ib_data
+    else: # VPA7
+        vb_data = create_data_blocks (vb_stream.read(), compression_type)
+        ib_data = create_data_blocks (ib_stream.read(), compression_type)
+        vpa_stream = struct.pack("<2I", count, len(vb_block)) + vertices_metadata + vb_data \
+            + struct.pack("<I", len(ib_block) * 2) + indices_metadata + ib_data
+    vb_stream.close()
+    ib_stream.close()
+    vpa_block = block_type.encode() + struct.pack("<I", len(vpa_stream)) + vpa_stream
+    bbox_array = [[bbox['min_x'], bbox['min_y'], bbox['min_z'], 1.0], [bbox['max_x'] ,bbox['max_y'], bbox['max_z'], 1.0],\
+        [(bbox['min_x'] + bbox['max_x'])/2, (bbox['min_y'] + bbox['max_y'])/2, (bbox['min_z'] + bbox['max_z'])/2,\
+        numpy.linalg.norm(numpy.array([bbox['min_x'], bbox['min_y'], bbox['min_z']]) - numpy.array([bbox['max_x'], bbox['max_y'], bbox['max_z']]))/2.0]]
+    bbox_block = b'BBOX' + struct.pack("<I", 48) + struct.pack("<12f", *[x for y in bbox_array for x in y])
+    return(vpa_block, bbox_block, materials)
 
 # Acceptable block types include 'VPA9', 'VPAX' and 'VP11'
 def create_vpax (submeshes, block_type = 'VPAX'):
@@ -177,6 +285,20 @@ def create_vpax (submeshes, block_type = 'VPAX'):
     bbox_block = b'BBOX' + struct.pack("<I", 48) + struct.pack("<12f", *[x for y in bbox_array for x in y])
     return(vpax_block, bbox_block, materials)
 
+def create_mat4 (materials, compression_type = 2):
+    def encode_mat4_string (string):
+        return (string.encode().ljust(0x40, b'\x00'))
+    uncompressed_data = bytearray()
+    for i in range(len(materials)):
+        uncompressed_data.extend(encode_mat4_string(materials[i]['material_name']))
+        for j in range(4):
+            uncompressed_data.extend(encode_mat4_string(materials[i]['textures'][j]['name']))
+        uncompressed_data.extend(struct.pack("<12f", *materials[i]['float_list']))
+        uncompressed_data.extend(struct.pack("<fifi", *materials[i]['unk_values']))
+    compressed_data = struct.pack("<I", len(materials)) + create_data_blocks (uncompressed_data, compression_type)
+    mat4_block = b'MAT4' + struct.pack("<I", len(compressed_data)) + compressed_data
+    return(mat4_block)
+
 def create_mat6 (materials, compression_type = 3):
     compressed_data = struct.pack("<I", len(materials))
     for i in range(len(materials)):
@@ -223,9 +345,10 @@ def rapid_parse_it3 (f):
                 contents[info_section]['length'] = section_info["section_start_offset"] - 8 - contents[info_section]['offset']
             section_info["data"] = parse_info_block(f)
             info_section = section_info["data"]["name"]
-            contents[section_info["data"]["name"]] = {'offset': section_info["section_start_offset"]-8, 'contents': []}
+            contents[section_info["data"]["name"]] = {'offset': section_info["section_start_offset"]-8, 'contents': [], 'offsets': []}
         else:
             contents[info_section]['contents'].append(section_info["type"])
+            contents[info_section]['offsets'].append(section_info["section_start_offset"])
         f.seek((section_info["section_start_offset"] + section_info["size"]), 0) # Move forward to the next section
     contents[info_section]['length'] = f.tell() - contents[info_section]['offset']
     return(contents)
@@ -251,8 +374,10 @@ def process_it3 (it3_filename, import_noskel = False):
         except:
             material_struct = {}
             print("{0}/materials_metadata.json missing or unreadable, reading data from {0}.it3 instead...".format(it3_filename[:-4]))
-            to_process_mat6 = [x for x in it3_contents if 'MAT6' in it3_contents[x]['contents']]
-            for section in to_process_mat6:
+            to_process_mat = [x for x in it3_contents if 'MAT4' in it3_contents[x]['contents']\
+                or 'MAT6' in it3_contents[x]['contents']]
+            for section in to_process_mat:
+                mat4 = []
                 mat6 = []
                 rty2 = {}
                 f.seek(it3_contents[section]['offset'])
@@ -260,19 +385,24 @@ def process_it3 (it3_filename, import_noskel = False):
                     section_info = {}
                     section_info["type"] = f.read(4).decode('ASCII')
                     section_info["size"], = struct.unpack("<I",f.read(4))
-                    if (section_info["type"] == 'MAT6'):
+                    if (section_info["type"] == 'MAT4'):
+                        mat4 = parse_mat4_block(f)
+                    elif (section_info["type"] == 'MAT6'):
                         mat6 = parse_mat6_block(f)
                     elif (section_info["type"] == 'RTY2'):
                         rty2 = parse_rty2_block(f)
                     else:
                         f.seek(section_info["size"],1)
                 mats = {}
+                for i in range(len(mat4)):
+                    material_name = mat4[i].pop('material_name')
+                    mats[material_name] = mat4[i]
                 for i in range(len(mat6)):
                     material_name = mat6[i].pop('material_name')
                     mats[material_name] = mat6[i]
                 material_struct[section] = {'rty2_shader_assignment': rty2, 'material_parameters': mats}
         to_process_tex = [x for x in it3_contents if 'TEXI' in it3_contents[x]['contents']] #TEXF someday?
-        to_process_vp = [x for x in it3_contents if any(y in it3_contents[x]['contents'] for y in ['VPA9','VPAX','VP11'])]
+        to_process_vp = [x for x in it3_contents if any(y in it3_contents[x]['contents'] for y in ['VPA7','VPA8','VPA9','VPAX','VP11'])]
         if import_noskel == False:
             to_process_vp = [x for x in to_process_vp if return_rty2_material(f, it3_contents[x]) != 8]
         new_it3 = bytes()
@@ -282,16 +412,27 @@ def process_it3 (it3_filename, import_noskel = False):
             if section in to_process_vp:
                 if 'VP11' in it3_contents[section]['contents']:
                     block_type = 'VP11'
+                    mat_type = 'MAT6'
                     compression_type = 3
                 elif 'VPAX' in it3_contents[section]['contents']:
                     block_type = 'VPAX'
+                    mat_type = 'MAT6'
                     compression_type = 3
-                else:
+                elif 'VPA9' in it3_contents[section]['contents']:
                     block_type = 'VPA9'
+                    mat_type = 'MAT6'
                     compression_type = 2
-                f.seek(it3_contents[section]['offset'])
+                elif 'VPA8' in it3_contents[section]['contents']:
+                    block_type = 'VPA8'
+                    mat_type = 'MAT4'
+                    compression_type = 2
+                else:
+                    block_type = 'VPA7'
+                    mat_type = 'MAT4'
+                    compression_type = 2
                 # Build VPAX/VP11, BBOX, MAT6
-                submeshfiles = [x[:-4] for x in glob.glob(it3_filename[:-4] + '/meshes/{}_*.fmt'.format(section))]
+                safe_sectionname = "".join([x if x not in "\/:*?<>|" else "_" for x in section])
+                submeshfiles = [x[:-4] for x in glob.glob(it3_filename[:-4] + '/meshes/{}_*.fmt'.format(safe_sectionname))]
                 submeshes = []
                 for j in range(len(submeshfiles)):
                     print("Reading submesh {0}...".format(submeshfiles[j]))
@@ -320,28 +461,51 @@ def process_it3 (it3_filename, import_noskel = False):
                         continue
                 if len(submeshes) == 0:
                     # Insert an empty mesh
-                    fmt = make_fmt(0xFFFF, {'VPA9':1, 'VPAX':1, 'VP11':2}[block_type])
-                    submeshes.append({'fmt': fmt, 'ib': [],\
-                    'vb': read_vb_stream(b''.join([b'\x00' for _ in range(480)]), fmt),\
-                    'vgmap': {section:0},\
-                    'material': {"material_name": "", "MATM_flags": 65793, "MATE_flags": 65793,\
-                        "unk0": [28,0,0,0,0,0,0], "parameters": [], "textures": []}})
-                vp_block, bbox_block, materials = create_vpax(submeshes, block_type = block_type)
-                mat6_block = create_mat6(materials, compression_type)
-                custom_bonemap = False
-                if os.path.exists(it3_filename[:-4] + '/meshes/{}.bonemap'.format(section)):
-                    bonemap = read_struct_from_json(it3_filename[:-4] + '/meshes/{}.bonemap'.format(section))
+                    if block_type in ['VPA9', 'VPAX', 'VP11']:
+                        fmt = make_fmt(0xFFFF, {'VPA9':1, 'VPAX':1, 'VP11':2}[block_type])
+                        submeshes.append({'fmt': fmt, 'ib': [],\
+                        'vb': read_vb_stream(b''.join([b'\x00' for _ in range(480)]), fmt),\
+                        'vgmap': {section:0},\
+                        'material': {"material_name": "", "MATM_flags": 65793, "MATE_flags": 65793,\
+                            "unk0": [28,0,0,0,0,0,0], "parameters": [], "textures": []}})
+                    else: # VPA7 / VPA8
+                        fmt = make_vpa8_fmt()
+                        submeshes.append({'fmt': fmt, 'ib': [[0,0,0]],\
+                        'vb': read_vb_stream(b''.join([b'\x00' for _ in range(40)]), fmt),\
+                        'vgmap': {section:0},\
+                        'material': {"material_name": "",\
+                            "textures": [{"name": ""},{"name": ""},{"name": ""},{"name": ""}],\
+                            "float_list": [1.0,1.0,1.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0],\
+                            "unk_values": [0.0,0,1.0,0]}})
+                if os.path.exists(it3_filename[:-4] + '/meshes/{}.bonemap'.format(safe_sectionname)):
+                    bonemap = read_struct_from_json(it3_filename[:-4] + '/meshes/{}.bonemap'.format(safe_sectionname))
                     bon3_block = create_bon3(bonemap, section, compression_type)
                     custom_bonemap = True
+                else:
+                    bonemap = {section: 0}
+                    if 'BON3' in it3_contents[section]['contents']:
+                        f.seek(it3_contents[section]['offsets'][it3_contents[section]['contents'].index('BON3')])
+                        bon3_data = parse_bon3_block (f)
+                        bonemap.update({bon3_data['joints'][i]:i+1 for i in range(len(bon3_data['joints']))})
+                    custom_bonemap = False
+                if block_type in ['VPA9', 'VPAX', 'VP11']:
+                    vp_block, bbox_block, materials = create_vpax(submeshes, block_type = block_type)
+                else: # VPA7 / VPA8
+                    vp_block, bbox_block, materials = create_vpa78(submeshes, bonemap, block_type = block_type)
+                if mat_type == 'MAT6':
+                    mat6_block = create_mat6(materials, compression_type)
+                else: # MAT4
+                    mat4_block = create_mat4(materials, compression_type)
                 custom_rty2 = False
                 if 'rty2_shader_assignment' in material_struct[section]:
                     rty2_block = create_rty2(material_struct[section]['rty2_shader_assignment'])
                     custom_rty2 = True
+                f.seek(it3_contents[section]['offset'])
                 while f.tell() < it3_contents[section]['offset']+it3_contents[section]['length']:
                     section_info = {}
                     section_info["type"] = f.read(4).decode('ASCII')
                     section_info["size"], = struct.unpack("<I",f.read(4))
-                    if (section_info["type"] in ['VPA9', 'VPAX', 'VP11']):
+                    if (section_info["type"] in ['VPA7', 'VPA8', 'VPA9', 'VPAX', 'VP11']):
                         f.seek(section_info["size"],1)
                         if len(submeshes) > 0:
                             new_it3 += vp_block
@@ -353,6 +517,10 @@ def process_it3 (it3_filename, import_noskel = False):
                         f.seek(section_info["size"],1)
                         if len(submeshes) > 0:
                             new_it3 += mat6_block
+                    elif (section_info["type"] == 'MAT4'):
+                        f.seek(section_info["size"],1)
+                        if len(submeshes) > 0:
+                            new_it3 += mat4_block
                     elif (section_info["type"] == 'BON3') and custom_bonemap == True:
                         f.seek(section_info["size"],1)
                         if len(submeshes) > 0:
@@ -381,7 +549,9 @@ def process_it3 (it3_filename, import_noskel = False):
                 new_it3 += f.read(it3_contents[section]['length'])
         # Append all textures to the end of the IT3 file
         if os.path.exists(it3_filename[:-4] + '/textures'):
-            textures = [os.path.basename(x) for x in glob.glob(it3_filename[:-4] + '/textures/*.dds')]
+            textures = [os.path.basename(x) for x in glob.glob(it3_filename[:-4] + '/textures/*.itp')]
+            textures.extend([os.path.basename(x) for x in glob.glob(it3_filename[:-4] + '/textures/*.dds')\
+                if not os.path.basename(x).replace('.dds','.itp') in textures])
             alpha_data = {}
             if os.path.exists(it3_filename[:-4] + '/textures/__alpha_data.json'):
                 with open(it3_filename[:-4] + '/textures/__alpha_data.json','rb') as f2:
