@@ -431,7 +431,7 @@ def process_it3 (it3_filename, import_noskel = False):
                     mat_type = 'MAT4'
                     compression_type = 2
                 # Build VPAX/VP11, BBOX, MAT6
-                safe_sectionname = "".join([x if x not in "\/:*?<>|" else "_" for x in section])
+                safe_sectionname = "".join([x if x not in "\\/:*?<>|" else "_" for x in section])
                 submeshfiles = [x[:-4] for x in glob.glob(it3_filename[:-4] + '/meshes/{}_*.fmt'.format(safe_sectionname))]
                 submeshes = []
                 for j in range(len(submeshfiles)):
