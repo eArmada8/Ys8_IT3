@@ -6,8 +6,8 @@
 
 import struct, io, array
 
-# C77 aka FALCOM3, thank you to TwnKey
-def parse_data_block_new (f, block_size, uncompressed_block_size, is_compressed):
+# C77 type 1 aka FALCOM3, thank you to TwnKey
+def parse_data_block_c77_1 (f, block_size, uncompressed_block_size, is_compressed):
     if is_compressed:
         contents = bytearray(uncompressed_block_size)
         start = f.tell()
@@ -26,6 +26,31 @@ def parse_data_block_new (f, block_size, uncompressed_block_size, is_compressed)
     else:
         contents = f.read(block_size - 4)
     return(contents)
+
+# C77 type 2, thank you to Kyuuhachi (Aureole-Suite/Falcompress)
+def parse_data_block_c77_2 (f, block_size, uncompressed_block_size):
+    def read_len(f, v):
+        len_ = v
+        if v == 15:
+            while True:
+                n, = struct.unpack("<B", f.read(1))
+                len_ += n
+                if not n == 255:
+                    break
+        return(len_)
+    end_of_block = f.tell() + block_size
+    unc_data = bytearray()
+    while f.tell() < end_of_block:
+        h, = struct.unpack("<B", f.read(1))
+        len_ = read_len(f, h >> 4)
+        unc_data.extend(f.read(len_))
+        if f.tell() >= end_of_block:
+            break
+        dist, = struct.unpack("<H", f.read(2))
+        len_ = read_len(f, h & 0xF) + 4
+        for _ in range(len_):
+            unc_data.append(unc_data[-dist])
+    return(unc_data)
 
 # Thank you to uyjulian, source: https://gist.github.com/uyjulian/a6ba33dc29858327ffa0db57f447abe5
 # Reference: CEgPacks2::UnpackBZMode2
@@ -132,9 +157,16 @@ def parse_data_blocks (f):
         num_blocks, compressed_size, segment_size, uncompressed_size = struct.unpack("<4I", f.read(16))
         data = bytes()
         for i in range(num_blocks):
-            block_size, uncompressed_block_size, block_type = struct.unpack("<3I", f.read(12))
-            is_compressed = (block_type == 8)
-            data += parse_data_block_new(f, block_size, uncompressed_block_size, is_compressed)
+            block_size, uncompressed_block_size = struct.unpack("<2I", f.read(8))
+            if flags & 0x7FFFFFFF == 1: # C77 mode 1
+                block_type, = struct.unpack("<I", f.read(4))
+                is_compressed = (block_type == 8)
+                data += parse_data_block_c77_1(f, block_size, uncompressed_block_size, is_compressed)
+            elif flags & 0x7FFFFFFF == 2: # C77 mode 2
+                data += parse_data_block_c77_2(f, block_size, uncompressed_block_size)
+            else:
+                print("Unknown C77 type!")
+                return b''
     else: # Thank you to uyjulian, source: https://gist.github.com/uyjulian/a6ba33dc29858327ffa0db57f447abe5
         dst_offset = 0
         compressed_size = flags

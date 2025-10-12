@@ -529,7 +529,7 @@ def parse_texi_block (f):
                         texture_data += parse_data_blocks(f)
                     else:
                         rawtexdata = bytes()
-                        if ihdr[0]['data']['compression_type'] in [2,3]:
+                        if ihdr[0]['data']['compression_type'] in [2,3,4]:
                             rawtexdata = parse_data_blocks(f)
                         elif ihdr[0]['data']['base_format'] in valid_bpps:
                             # This seems wrong but I don't have any proper data to check, and the header only works for BC7 right now anyway, fix later
@@ -654,7 +654,7 @@ def process_it3 (it3_filename, complete_maps = complete_vgmaps_default, preserve
             material_block = {}
             rty2_block = {}
             for j in range(len(meshes[i]["meshes"])):
-                safe_filename = "".join([x if x not in "\/:*?<>|" else "_" for x in meshes[i]["name"]])
+                safe_filename = "".join([x if x not in "\\/:*?<>|" else "_" for x in meshes[i]["name"]])
                 write_fmt_ib_vb(meshes[i]["meshes"][j], it3_filename[:-4] +\
                     '/meshes/{0}_{1:02d}'.format(safe_filename, j),\
                     node_list = meshes[i]["node_list"], complete_maps = complete_maps)
@@ -674,12 +674,12 @@ def process_it3 (it3_filename, complete_maps = complete_vgmaps_default, preserve
         for i in range(len(textures)):
             if not os.path.exists(it3_filename[:-4] + '/textures'):
                 os.mkdir(it3_filename[:-4] + '/textures')
-            safe_filename = "".join([x if x not in "\/:*?<>|" else "_" for x in textures[i]["name"]])
+            safe_filename = "".join([x if x not in "\\/:*?<>|" else "_" for x in textures[i]["name"]])
             use_alpha[safe_filename] = textures[i]["use_alpha"]
             if len(textures[i]["texture"]) > 0:
                 with open(it3_filename[:-4] + '/textures/{0}.dds'.format(safe_filename), 'wb') as f:
                     f.write(textures[i]["texture"])
-            if always_write_itp ==True or not len(textures[i]["texture"]) > 0:
+            if always_write_itp == True or not len(textures[i]["texture"]) > 0:
                 with open(it3_filename[:-4] + '/textures/{0}.itp'.format(safe_filename), 'wb') as f:
                     f.write(textures[i]["itp"])
             write_struct_to_json(use_alpha, it3_filename[:-4] + '/textures/__alpha_data')
