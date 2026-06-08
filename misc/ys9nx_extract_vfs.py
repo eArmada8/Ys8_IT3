@@ -26,13 +26,15 @@ def read_file (f, file_entry):
     decomp = zstandard.ZstdDecompressor()
     f.seek(file_entry['true_offset'])
     if file_entry['flags'] & 0x3: # Compressed
-        cmp_data = bytearray(b'\x28\xB5\x2F\xFD\x00\x88')
+        cmp_data = bytearray(b'\x28\xB5\x2F\xFD') # Zstandard magic
+        cmp_data.extend(b'\x00\x88') # Frame Header
         for i in range(len(file_entry['chunk_table'])):
             chunk = f.read(abs(file_entry['chunk_table'][i]))
-            cmp_data.extend(((len(chunk)<<3)
-                + (4 if file_entry['chunk_table'][i]>=0 else 0)).to_bytes(3,byteorder='little'))
+            block_header = ((len(chunk)<<3) # Block Header - Block size
+                + ((2 if file_entry['chunk_table'][i]>=0 else 0) << 1) # Block type
+                + (1 if i == (len(file_entry['chunk_table']) - 1) else 0)) # Last block
+            cmp_data.extend((block_header).to_bytes(3,byteorder='little'))
             cmp_data.extend(chunk)
-        cmp_data.extend(b'\x01\x00\x00')
         unc_data = decomp.decompress(cmp_data, max_output_size = file_entry['unc_size'])
     else:
         unc_data = f.read(file_entry['unc_size'])
