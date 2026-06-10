@@ -29,8 +29,9 @@ def make_fmt(mask, game_version = 1):
         "DXGI_FORMAT_R{0}_UINT".format([16,32][game_version-1]), 'elements': []}
     element_id, stride = 0, 0
     semantic_index = {'COLOR': 0, 'TEXCOORD': 0, 'UNKNOWN': 0} # Counters for multiple indicies
+    attr_stride = [16, 16, 16, 16, 4, 4, 4, 4, 16, 16, 16, 16, 4, 4, 4, 4, 12, 12, 8, 8]
     elements = []
-    for i in range(16):
+    for i in range(20):
         if mask & 1 << i:
             # I think order matters in this dict, so we will define the entire structure with default values
             element = {'id': '{0}'.format(element_id), 'SemanticName': '', 'SemanticIndex': '0',\
@@ -61,16 +62,26 @@ def make_fmt(mask, game_version = 1):
             elif i == 14:
                 element['SemanticName'] = 'BLENDINDICES'
                 element['Format'] = 'R8G8B8A8_UINT'
+            elif i == 16:
+                element['SemanticName'] = 'POSITION'
+                element['Format'] = 'R32G32B32_FLOAT'
+            elif i in [18,19]:
+                element['SemanticName'] = 'TEXCOORD'
+                element['SemanticIndex'] = str(semantic_index['TEXCOORD'])
+                element['Format'] = 'R32G32_FLOAT'
+                semantic_index['TEXCOORD'] += 1
             else:
                 element['SemanticName'] = 'UNKNOWN'
                 element['SemanticIndex'] = str(semantic_index['UNKNOWN'])
                 if 1<<i & 0xF0F0:
                     element['Format'] = 'R8G8B8A8_UINT'
+                elif 1<<i & 0x30000:
+                    element['Format'] = 'R32G32B32_FLOAT'
                 else:
                     element['Format'] = 'R32G32B32A32_UINT'
                 semantic_index['UNKNOWN'] += 1
             element['AlignedByteOffset'] = str(stride)
-            stride += {True: 16, False: 4}[not (1<<i & 0xF0F0)] # 0-3 and 8-11 are stride 16, 4-7 and 12-15 are stride 4
+            stride += attr_stride[i]
             element_id += 1
             elements.append(element)
     fmt['stride'] = str(stride)
@@ -140,6 +151,10 @@ def parse_rty2_block (f):
         'unknown': struct.unpack("<B", f.read(1))[0],\
         'v0': list(struct.unpack("<3f", f.read(12)))}
 
+def parse_rty3_block (f):
+    return {'material_variant': struct.unpack("<B", f.read(1))[0],\
+        'unknown': struct.unpack("<B", f.read(1))[0]}
+
 def parse_lig3_block (f): #lighting, thank you @lm
     return {'color': list(struct.unpack("<4f", f.read(16))),\
         'light_flags': struct.unpack("<B", f.read(1))[0],\
@@ -147,8 +162,11 @@ def parse_lig3_block (f): #lighting, thank you @lm
         'light_angles': list(struct.unpack("<2f", f.read(8))),\
         'light_ranges': list(struct.unpack("<2f", f.read(8)))}
 
+def parse_infy_block (f):
+    return {'v0': list(struct.unpack("<I", f.read(4)))}
+
 def parse_infz_block (f):
-    return {'v0': list(struct.unpack("<4f", f.read(16)))}
+    return {'v0': list(struct.unpack("<4I", f.read(16)))}
 
 def parse_bbox_block (f):
     return {'bbox_min': list(struct.unpack("<4f", f.read(16))),\
@@ -213,6 +231,41 @@ def parse_mat6_block (f):
             for j in range(count_textures):
                 textures.append({'name': block.read(name_len2).split(b'\x00')[0].decode('ASCII'),\
                     'flags': textures_flags[j]})
+        mat_blocks.append({'material_name': current_mat_name, 'MATM_flags': flags, 'MATE_flags': mate_flags, \
+            'unk0': unk0, 'parameters': parameters, 'textures': textures})
+    return(mat_blocks)
+
+def parse_matu_block (f):
+    count, size = struct.unpack("<2I", f.read(8))
+    mat_blocks = []
+    for i in range(count):
+        matm_block_start = f.tell()
+        magic = f.read(4).decode('ASCII')
+        flags, part_size = struct.unpack("<2I", f.read(8))
+        unk0 = struct.unpack("<7I", f.read(28))
+        count_parameters, unk1, count_textures, = struct.unpack("<3I", f.read(12))
+        parameters = []
+        for j in range(count_parameters):
+            parameters.append(list(struct.unpack("<4f", f.read(16))))
+        textures_flags = []
+        for j in range(count_textures):
+            textures_flags.append(list(struct.unpack("<4I", f.read(16))))
+        unk2 = []
+        remaining_distance = matm_block_start + part_size - f.tell()
+        if remaining_distance > 0:
+            unk2 = list(struct.unpack("<{}H".format(remaining_distance//2), f.read(remaining_distance)))
+        mate_magic = f.read(4).decode('ASCII')
+        mate_block_start = f.tell()
+        mate_flags, mate_part_size, name_len1 = struct.unpack("<3I", f.read(12))
+        current_mat_name = f.read(name_len1).split(b'\x00')[0].decode('ASCII')
+        name_len2, = struct.unpack("<I", f.read(4))
+        textures = []
+        for j in range(count_textures):
+            textures.append({'name': f.read(name_len2).split(b'\x00')[0].decode('ASCII'),\
+                'flags': textures_flags[j]})
+        remaining_distance = mate_block_start + mate_part_size - f.tell()
+        if remaining_distance > 0:
+            mate_unk = list(struct.unpack("<{}H".format(remaining_distance//2), f.read(remaining_distance)))
         mat_blocks.append({'material_name': current_mat_name, 'MATM_flags': flags, 'MATE_flags': mate_flags, \
             'unk0': unk0, 'parameters': parameters, 'textures': textures})
     return(mat_blocks)
@@ -331,7 +384,10 @@ def parse_vpax_block (f, block_type, trim_for_gpu = False):
         blocks = 1
         if block_type == 'VPA9':
             blocks = math.ceil(size / 0x40000)
-        data = b''.join([parse_data_blocks(f) for i in range(blocks)])
+        if block_type == 'VPAU':
+            data = f.read(size)
+        else:
+            data = b''.join([parse_data_blocks(f) for i in range(blocks)])
         vertices.append(data)
     for i in range(count):
         print("Decompressing index buffer {0}".format(i))
@@ -339,7 +395,10 @@ def parse_vpax_block (f, block_type, trim_for_gpu = False):
         blocks = 1
         if block_type == 'VPA9':
             blocks = math.ceil(size / 0x40000)
-        data = b''.join([parse_data_blocks(f) for i in range(blocks)])
+        if block_type == 'VPAU':
+            data = f.read(size * 2)
+        else:
+            data = b''.join([parse_data_blocks(f) for i in range(blocks)])
         indices.append(data)
     section_info = []
     for i in range(count):
@@ -348,16 +407,17 @@ def parse_vpax_block (f, block_type, trim_for_gpu = False):
             mesh["header"] = {'name': vb_stream.read(4).decode('ASCII'), 'version': struct.unpack("<I", vb_stream.read(4))[0],\
                 'bbox_mid': struct.unpack("<4f", vb_stream.read(16)), 'bbox_min': struct.unpack("<4f", vb_stream.read(16)),\
                 'bbox_max': struct.unpack("<4f", vb_stream.read(16))}
-            mesh["header"]["vertex_count"], mesh["header"]["data_size"], mesh["header"]["total_bitmask"],\
+            mesh["header"]["vertex_count"], mesh["header"]["data_size"], mesh["header"]["fmt_bitmask"],\
                 mesh["header"]["total_attr"] = struct.unpack("<4I", vb_stream.read(16))
-            mesh["header"]["attr_format"] = list(struct.unpack("<16I", vb_stream.read(64)))
-            mesh["header"]["attr_offset"] = list(struct.unpack("<16I", vb_stream.read(64)))
-            mesh["header"]["attr_stride"] = list(struct.unpack("<16I", vb_stream.read(64)))
-            mesh["header"]["attr_bitmask"] = list(struct.unpack("<16I", vb_stream.read(64)))
+            n_attr = mesh["header"]["total_attr"]
+            mesh["header"]["attr_format"] = list(struct.unpack("<{}I".format(n_attr), vb_stream.read(n_attr * 4)))
+            mesh["header"]["attr_offset"] = list(struct.unpack("<{}I".format(n_attr), vb_stream.read(n_attr * 4)))
+            mesh["header"]["attr_stride"] = list(struct.unpack("<{}I".format(n_attr), vb_stream.read(n_attr * 4)))
+            mesh["header"]["attr_bitmask"] = list(struct.unpack("<{}I".format(n_attr), vb_stream.read(n_attr * 4)))
             mesh["header"]["material_id"], = struct.unpack("<I", vb_stream.read(4))
             mesh["header"]["unk"] = list(struct.unpack("<8I", vb_stream.read(32)))
             if mesh["header"]["name"] == 'VPAC':
-                fmt_struct = make_fmt(mesh["header"]["total_bitmask"], game_version = {'VPA9':1, 'VPAX':1, 'VP11':2}[block_type])
+                fmt_struct = make_fmt(mesh["header"]["fmt_bitmask"], game_version = {'VPA9':1, 'VPAX':1, 'VP11':2, 'VPAU':1}[block_type])
                 mesh["block_size"] = int(fmt_struct['stride'])
                 #vb = vb_stream.read(mesh["block_size"] * mesh["header"]["vertex_count"])
                 vb = read_vb_stream(vb_stream.read(), fmt_struct, e = '<')
@@ -367,7 +427,8 @@ def parse_vpax_block (f, block_type, trim_for_gpu = False):
                         'vb': [vb[i] for i in [0,1,4,5,6,7,8,9,12,14]],\
                         'material': mesh["header"]["material_id"]})
                 else:
-                    mesh_buffers.append({'fmt': fmt_struct, 'ib': ib, 'vb': vb, 'material': mesh["header"]["material_id"]})
+                    mesh_buffers.append({'fmt': fmt_struct, 'ib': ib, 'vb': vb, 'material': mesh["header"]["material_id"],
+                        'fmt_bitmask': mesh["header"]["fmt_bitmask"]})
             section_info.append(mesh)
     return(section_info, mesh_buffers)
 
@@ -387,8 +448,10 @@ def obtain_animation_data (f, it3_contents):
     return(ani_struct)
 
 def obtain_mesh_data (f, it3_contents, it3_filename, preserve_gl_order = False, trim_for_gpu = False):
-    vpax_blocks = [i for i in range(len(it3_contents)) if it3_contents[i]['type'] in ['VPA7', 'VPA8', 'VPA9', 'VPAX', 'VP11']]
-    mat_blocks = {it3_contents[i]['info_name']:it3_contents[i]['data'] for i in range(len(it3_contents)) if it3_contents[i]['type'] in ['MAT4', 'MAT6']}
+    vpax_blocks = [i for i in range(len(it3_contents)) if it3_contents[i]['type']
+        in ['VPA7', 'VPA8', 'VPA9', 'VPAX', 'VP11', 'VPAU']]
+    mat_blocks = {it3_contents[i]['info_name']:it3_contents[i]['data'] for i in range(len(it3_contents))
+        if it3_contents[i]['type'] in ['MAT4', 'MAT6', 'MATU']}
     meshes = []
     for i in range(len(vpax_blocks)):
         print("Processing mesh section {0}".format(it3_contents[vpax_blocks[i]]['info_name']))
@@ -610,8 +673,12 @@ def parse_it3 (f):
             section_info["info_name"] = info_section
         if section_info["type"] == 'RTY2':
             section_info["data"] = parse_rty2_block(f)
+        elif section_info["type"] == 'RTY3':
+            section_info["data"] = parse_rty3_block(f)
         elif section_info["type"] == 'LIG3':
             section_info["data"] = parse_lig3_block(f)
+        elif section_info["type"] == 'INFY':
+            section_info["data"] = parse_infy_block(f)
         elif section_info["type"] == 'INFZ':
             section_info["data"] = parse_infz_block(f)
         elif section_info["type"] == 'BBOX':
@@ -624,6 +691,8 @@ def parse_it3 (f):
             section_info["data"] = parse_mat4_block(f)
         elif section_info["type"] == 'MAT6':
             section_info["data"] = parse_mat6_block(f)
+        elif section_info["type"] == 'MATU':
+            section_info["data"] = parse_matu_block(f)
         elif section_info["type"] == 'BON3':
             section_info["data"] = parse_bon3_block(f)
         #elif section_info["type"] == 'KAN7':
@@ -652,7 +721,7 @@ def process_it3 (it3_filename, complete_maps = complete_vgmaps_default, preserve
         material_json = {}
         for i in range(len(meshes)):
             material_block = {}
-            rty2_block = {}
+            rty_block = {}
             for j in range(len(meshes[i]["meshes"])):
                 safe_filename = "".join([x if x not in "\\/:*?<>|" else "_" for x in meshes[i]["name"]])
                 write_fmt_ib_vb(meshes[i]["meshes"][j], it3_filename[:-4] +\
@@ -662,11 +731,16 @@ def process_it3 (it3_filename, complete_maps = complete_vgmaps_default, preserve
                     material_block[meshes[i]["meshes"][j]["material"]["material_name"]] = \
                         {key:meshes[i]["meshes"][j]["material"][key] for key \
                         in meshes[i]["meshes"][j]["material"] if key != 'material_name'}
-            rty2_blocks = [j for j in range(len(it3_contents)) if it3_contents[j]['type'] == 'RTY2'\
+            if 'fmt_bitmask' in meshes[i]["meshes"][0]:
+                with open(it3_filename[:-4] + '/meshes/{0}'.format(safe_filename, j) + '.fmt_bitmask', 'wb') as f:
+                    f.write(json.dumps({'fmt_bitmask': meshes[i]["meshes"][0]['fmt_bitmask']}, indent=4).encode("utf-8"))
+            rty_blocks = [j for j in range(len(it3_contents)) if it3_contents[j]['type'] in ['RTY2', 'RTY3']\
                 and it3_contents[j]['info_name'] == meshes[i]["name"]]
-            if len(rty2_blocks) > 0:
-                rty2_block = it3_contents[rty2_blocks[0]]['data']
-            material_json[meshes[i]["name"]] = {'rty2_shader_assignment': rty2_block, 'material_parameters': material_block}
+            if len(rty_blocks) > 0:
+                rty_block = it3_contents[rty_blocks[0]]['data']
+                rty_type = it3_contents[rty_blocks[0]]['type']
+            material_json[meshes[i]["name"]] = {'{}_shader_assignment'.format(rty_type.lower()): rty_block,
+                'material_parameters': material_block}
         with open(it3_filename[:-4] + '/materials_metadata.json', 'wb') as f2:
             f2.write(json.dumps(material_json, indent = 4).encode('utf-8'))
         print("Writing textures")
