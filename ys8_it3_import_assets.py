@@ -219,9 +219,8 @@ def create_vpax (submeshes, block_type = 'VPAX'):
     attr_stride = [16, 16, 16, 16, 4, 4, 4, 4, 16, 16, 16, 16, 4, 4, 4, 4, 12, 12, 8, 8]
     attr_bitmask = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072, 262144, 524288]
     attr_len = {'VPA9': 16, 'VPAX': 16, 'VPAU': 20, 'VP11': 16}[block_type]
-    if block_type == 'VPAU':
-        compression_type = 0 # VPAU is uncompressed, and type is ignored
-    elif block_type == 'VPA9':
+    # VPAU is uncompressed, and type is ignored
+    if block_type == 'VPA9':
         compression_type = 2
     else:
         compression_type = 3
@@ -419,7 +418,6 @@ def return_vpau_bitmask(f, it3_section):
             f.seek(size,1)
     return -1
 
-
 def process_it3 (it3_filename, import_noskel = False):
     with open(it3_filename,"rb") as f:
         it3_contents = rapid_parse_it3 (f)
@@ -475,7 +473,7 @@ def process_it3 (it3_filename, import_noskel = False):
                     block_type = 'VPAU'
                     mat_type = 'MATU'
                     rty_type = 'RTY3'
-                    compression_type = 0
+                    compression_type = 3
                     default_fmt_bitmask = return_vpau_bitmask(f, it3_contents[section])
                 elif 'VPAX' in it3_contents[section]['contents']:
                     block_type = 'VPAX'
