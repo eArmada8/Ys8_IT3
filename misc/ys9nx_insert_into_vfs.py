@@ -81,37 +81,10 @@ def parse_vfs_file_with_folders (f):
 def round_up_align (val, align = 16):
     return ((val // align) * align + align if val % align > 0 else val)
 
+# New files are inserted uncompressed
 def compress_file (unc_data):
-    zstd_param = zstandard.ZstdCompressionParameters(
-        compression_level = 15,
-        write_content_size = False) # Unneeded, removing it standardizes frame header to 2 bytes
-    comp = zstandard.ZstdCompressor(compression_params = zstd_param)
-    cmp_data = comp.compress(unc_data)
-    # Isolate all blocks and remove their blook headers
-    data_blocks = []
-    block_sizes = []
-    i = 6 # Skip magic and frame header
-    while i < len(cmp_data):
-        block_header = cmp_data[i:i+3]
-        cmp_flag = (int.from_bytes(block_header, "little") & 6) >> 1
-        len_ = (int.from_bytes(block_header, "little")) >> 3
-        i += 3
-        if cmp_flag == 2: # Compressed
-            data_blocks.append(cmp_data[i:i+len_])
-            block_sizes.append(len_)
-        elif cmp_flag == 1: # Run-length Encoding, convert to uncompressed
-            data_blocks.append(cmp_data[i:i+1] * len_)
-            block_sizes.append(len_ * -1)
-        elif cmp_flag == 0: # Uncompressed
-            data_blocks.append(cmp_data[i:i+len_])
-            block_sizes.append(len_ * -1)
-        else:
-            print("Compression failure, illegal flag detected!")
-            return -1 # cmp_flag should always be in [0,1,2]
-        i += len_
-    if block_sizes == [0]: # Zero-byte file
-        block_sizes = []
-    return(b''.join(data_blocks), block_sizes)
+    block_sizes = [-0x20000]*(len(unc_data)//0x20000)+([len(unc_data)%0x20000 * -1] if len(unc_data)%0x20000 else [])
+    return(unc_data, block_sizes)
 
 # The file pointer f points to the original data.vfs
 def build_data_block (f, all_files, base_folder):
