@@ -8,8 +8,8 @@
 #
 # Only files in the data folder will be replaced, all other files will be untouched.  This script
 # processes the files in the order they exist in the binary blob, to minimize changes to the blob
-# itself.  New files are compressed and inserted in their original location.  This allows for the
-# creation of very small patches when using a patching system such as Delta Patcher.  To
+# itself.  New files are stored uncompressed and inserted in their original location.  This allows
+# for the creation of very small patches when using a patching system such as Delta Patcher.  To
 # significantly reduce processing time, the original files are not decompressed to check for
 # changes - therefore all files that are present will be replaced.  (So even though
 # ys9nx_extract_vfs.py will extract all 30K+ files, you only want to have *changed* files present
