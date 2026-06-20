@@ -51,7 +51,6 @@ def parse_dat_file (f):
             files[i]['filename'] = os.path.basename(files[i]['full_filepath'])
     return files
 
-
 # Function to extract files.  If files_to_extract is an empty list, all files will be extracted.
 def extract_files (dat_filename, files_to_extract = [], overwrite = False):
     with open(dat_filename,'rb') as f:
@@ -78,7 +77,6 @@ def extract_files (dat_filename, files_to_extract = [], overwrite = False):
                 os.utime(base_folder + '/' + files[i]['filepath'] + '/' + files[i]['filename'],
                     (files[i]['datetime'], files[i]['datetime']))
     return
-
 
 if __name__ == "__main__":
     # Set current directory
