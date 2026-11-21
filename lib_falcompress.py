@@ -160,6 +160,11 @@ def parse_data_blocks (f):
             block_size, uncompressed_block_size = struct.unpack("<2I", f.read(8))
             if flags & 0x7FFFFFFF == 1: # C77 mode 1
                 block_type, = struct.unpack("<I", f.read(4))
+                try:
+                    assert block_type in [0,8]
+                except AssertionError:
+                    print("Unknown C77 compression type {}!".format(block_type))
+                    raise IndexError
                 is_compressed = (block_type == 8)
                 data += parse_data_block_c77_1(f, block_size, uncompressed_block_size, is_compressed)
             elif flags & 0x7FFFFFFF == 2: # C77 mode 2
@@ -199,6 +204,7 @@ def compress_data_block(content):
     result = bytes()
     offset = 0 # First byte of search buffer, anything behind this is already copied to result
     window = 1 # First byte of look-ahead buffer
+    block_compressed = False
     if len(content) > 2:
         while window < len(content):
             if content.find(content[window], offset, window) != -1:
@@ -229,9 +235,10 @@ def compress_data_block(content):
             window += 1
         if offset < len(content):
             result += struct.pack("<2B", 0, (window-offset)) + content[offset:window]
+        block_compressed = True
     else:
         result = content
-    return(result)
+    return(result, block_compressed)
 
 # Source: github.com/Aureole-Suite/Falcompress, thank you to Kyuuhachi
 def compress_mode2(input_):
@@ -379,7 +386,8 @@ def compress_data_mode2(data):
     for i in range(len(chunk_data)):
         print("Compressing data chunk {0} of {1}.".format(i+1, len(chunk_data)))
         cdata += compressed_chunk(chunk_data[i]) + b'\x01'
-    cdata += compressed_chunk(chunk_data[-1][0].to_bytes()) if len(chunk_data) > 0 else compressed_chunk(b'') + b'\x00'
+    cdata += (compressed_chunk(chunk_data[-1][0].to_bytes(1, 'little'))
+        if len(chunk_data) > 0 else compressed_chunk(b'') + b'\x00')
     return(struct.pack("<3I", len(cdata) + 8, len(data), len(chunk_data) + 1) + cdata)
 
 # Content should be a bytes-like object.
@@ -388,11 +396,17 @@ def create_data_blocks (content, mode = 3):
         segment_size = 0x40000 # Separate into chunks of this size prior to compression
         uncompressed_sizes = [len(content[i:i+segment_size]) for i in range(0, max(1,len(content)), segment_size)]
         print("Compressing {0} data blocks...".format(len(uncompressed_sizes)))
-        compressed_content = [compress_data_block(content[i:i+segment_size]) for i in range(0, max(1,len(content)), segment_size)]
+        compressed_content, is_compressed = [], []
+        for i in range(0, max(1,len(content)), segment_size):
+            cmp_block, block_is_compressed = compress_data_block(content[i:i+segment_size])
+            compressed_content.append(cmp_block)
+            is_compressed.append(block_is_compressed)
         compressed_sizes = [len(x) for x in compressed_content]
         compressed_block = struct.pack("<5I", 0x80000001, len(uncompressed_sizes), sum([x+12 for x in compressed_sizes]),\
             max([x+12 for x in compressed_sizes]), len(content)) +\
-            b''.join([(struct.pack("<3I", compressed_sizes[i]+4, uncompressed_sizes[i], 8) + compressed_content[i]) for i in range(len(uncompressed_sizes))])
+            b''.join([(struct.pack("<3I", compressed_sizes[i]+4, uncompressed_sizes[i],
+                8 if is_compressed[i] else 0) + compressed_content[i])
+                for i in range(len(uncompressed_sizes))])
         return(compressed_block)
     elif mode == 2:
         return(compress_data_mode2(content))
