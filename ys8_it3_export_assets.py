@@ -420,7 +420,7 @@ def parse_vpax_block (f, block_type, trim_for_gpu = False):
                 fmt_struct = make_fmt(mesh["header"]["fmt_bitmask"], game_version = {'VPA9':1, 'VPAX':1, 'VP11':2, 'VPAU':1}[block_type])
                 mesh["block_size"] = int(fmt_struct['stride'])
                 #vb = vb_stream.read(mesh["block_size"] * mesh["header"]["vertex_count"])
-                vb = read_vb_stream(vb_stream.read(), fmt_struct, e = '<')
+                vb = read_vb_stream(vb_stream.read(mesh["block_size"] * mesh["header"]["vertex_count"]), fmt_struct, e = '<')
                 ib = read_ib_stream(indices[i], fmt_struct, e = '<')
                 if trim_for_gpu == True and fmt_struct['stride'] == '160':
                     mesh_buffers.append({'fmt': make_88_fmt(), 'ib': ib,\
@@ -498,28 +498,55 @@ def write_fmt_ib_vb (mesh_buffer, filename, node_list = [], complete_maps = Fals
             f.write(json.dumps({'material_name': mesh_buffer['material']['material_name']}, indent=4).encode("utf-8"))
     return
 
-# Currently assumes BC7 - This needs to be fixed
-def dds_header (dwHeight, dwWidth, dwPitchOrLinearSize, dwMipMapCount):
-    header_info = {'dwSize': 124, 'dwFlags': 0xA1007, 'dwHeight': dwHeight,\
+# Accepts base_format of 4-8 and 10, older formats are already exported as .itp.  Depth textures not supported.
+def dds_header (base_format, sub_format, dwHeight, dwWidth, dwMipMapCount):
+    dwFlags, dwCaps = 0x1007, 0x1000
+    dwDepth = 1
+    if dwMipMapCount > 1:
+        dwFlags += 0x20000
+        dwCaps += 0x400008
+    if base_format in [4,5]:
+        block_comp = False
+        dwFlags += 0x8
+        dwFourCC = b'\x00\x00\x00\x00'
+        if base_format == 4:
+            dwPitchOrLinearSize = (dwWidth * 16 + 7) // 8
+            if sub_format == 1: # B4G4R4A4_UNORM
+                dwRGBBitCount, dwRGBABitMask, pixelflags = 16, [0x0F00, 0x00F0, 0x000F, 0xF000], 0x41
+            elif sub_format == 2: # B5G5R5A1_UNORM
+                dwRGBBitCount, dwRGBABitMask, pixelflags = 16, [0x7C00, 0x03E0, 0x001F, 0x8000], 0x41
+            elif sub_format == 3: # B5G6R5_UNORM
+                dwRGBBitCount, dwRGBABitMask, pixelflags = 16, [0xF800, 0x07E0, 0x001F, 0], 0x40
+        else: # B8G8R8A8_UNORM
+            dwPitchOrLinearSize = (dwWidth * 32 + 7) // 8
+            dwRGBBitCount, dwRGBABitMask, pixelflags = 32, [0x00FF0000, 0x0000FF00, 0x000000FF, 0xFF000000], 0x41
+    elif base_format in [6, 7, 8, 10]:
+        block_comp = True
+        dwFlags += 0x80000
+        dwFourCC = {6:b'DXT1', 7:b'DXT3', 8:b'DXT5', 10:b'DX10'}[base_format]
+        dwPitchOrLinearSize = max(1,(dwWidth+3)//4) * max(1,(dwHeight+3)//4) * {6:8, 7:16, 8:16, 10:16}[base_format]
+        dwRGBBitCount, dwRGBABitMask, pixelflags = 0, [0,0,0,0], 0x4
+    header_info = {'dwSize': 124, 'dwFlags': dwFlags, 'dwHeight': dwHeight,\
         'dwWidth': dwWidth, 'dwPitchOrLinearSize': dwPitchOrLinearSize,\
-        'dwDepth': 1, 'dwMipMapCount': dwMipMapCount, 'pixel_format': {'dwSize': 32,\
-        'dwFlags': 0x4, 'dwFourCC': 'DX10', 'dwRGBBitCount': 0, 'dwRBitMask': 0,\
-        'dwGBitMask': 0, 'dwBBitMask': 0, 'dwABitMask': 0}, 'dwCaps': 0x1000,\
-        'dwCaps2': 0, 'dwCaps3': 0, 'dwCaps4': 0, 'dxt10_header':\
-        {'dxgiFormat': 98, 'resourceDimension': 3, 'miscFlag': 0, 'arraySize': 1, 'miscFlags2': 0}}
+        'dwDepth': dwDepth, 'dwMipMapCount': dwMipMapCount, 'pixel_format': {'dwSize': 32,\
+        'dwFlags': pixelflags, 'dwFourCC': dwFourCC, 'dwRGBBitCount': dwRGBBitCount, 'dwRBitMask': dwRGBABitMask[0],\
+        'dwGBitMask':  dwRGBABitMask[1], 'dwBBitMask':  dwRGBABitMask[2], 'dwABitMask':  dwRGBABitMask[3]},
+        'dwCaps': dwCaps, 'dwCaps2': 0, 'dwCaps3': 0, 'dwCaps4': 0}
     header = b'DDS ' + struct.pack("<18I", *([header_info['dwSize'], header_info['dwFlags'],\
         header_info['dwHeight'], header_info['dwWidth'], header_info['dwPitchOrLinearSize'],\
         header_info['dwDepth'], header_info['dwMipMapCount']] + [0 for x in range(11)]))
     header += struct.pack("<2I", header_info["pixel_format"]['dwSize'], header_info["pixel_format"]['dwFlags'])
-    header += header_info["pixel_format"]['dwFourCC'].encode()
+    header += dwFourCC
     header += struct.pack("<5I", header_info["pixel_format"]['dwRGBBitCount'], header_info["pixel_format"]['dwRBitMask'],\
         header_info["pixel_format"]['dwGBitMask'], header_info["pixel_format"]['dwBBitMask'],\
         header_info["pixel_format"]['dwABitMask'])
     header += struct.pack("<5I", header_info['dwCaps'], header_info['dwCaps2'], header_info['dwCaps3'],\
         header_info['dwCaps4'], 0)
-    header += struct.pack("<5I", header_info['dxt10_header']['dxgiFormat'], header_info['dxt10_header']['resourceDimension'],\
-        header_info['dxt10_header']['miscFlag'], header_info['dxt10_header']['arraySize'],\
-        header_info['dxt10_header']['miscFlags2'])
+    if dwFourCC == b'DX10':
+        bc7_dxt10_header = {'dxgiFormat': 98, 'resourceDimension': 3, 'miscFlag': 0, 'arraySize': 1, 'miscFlags2': 0}
+        header += struct.pack("<5I", bc7_dxt10_header['dxgiFormat'], bc7_dxt10_header['resourceDimension'],\
+            bc7_dxt10_header['miscFlag'], bc7_dxt10_header['arraySize'],\
+            bc7_dxt10_header['miscFlags2'])
     return(header)
 
 # Like everything else in this script, adapted from TwnKey's work.  TwnKey credits GFD studio.
@@ -539,18 +566,38 @@ def morton (t, sx, sy):
     return(num[6] * sx + num[5])
 
 def unswizzle (texture_data, dwHeight, dwWidth, block_size):
+    if block_size in [8,16]: # Block compression
+        gridWidth, gridHeight = math.ceil(dwWidth/4), math.ceil(dwHeight/4)
+    else: # Uncompressed ARGB
+        gridWidth, gridHeight = dwWidth, dwHeight
     morton_seq = [morton(x,8,8) for x in range(64)]
-    output = bytearray(dwHeight * dwWidth // (16 // block_size))
+    output = bytearray(gridWidth * gridHeight * block_size)
     data_index = 0
-    for y in range(((dwHeight // 4) + 7) // 8):
-        for x in range(((dwWidth // 4) + 7) // 8):
+    for y in range((gridHeight + 7) // 8):
+        for x in range((gridWidth + 7) // 8):
             for t in range(64):
                 y_offset = (y * 8) + (morton_seq[t] // 8)
                 x_offset = (x * 8) + (morton_seq[t] % 8)
-                if (x_offset < dwWidth // 4) and (y_offset < dwHeight // 4):
-                    dest_index = block_size * (y_offset * (dwWidth // 4) + x_offset)
+                if (x_offset < gridWidth) and (y_offset < gridHeight):
+                    dest_index = block_size * (y_offset * gridWidth + x_offset)
                     output[dest_index:dest_index+block_size] = texture_data[data_index:data_index+block_size]
-                data_index += block_size
+                    data_index += block_size
+    return(output)
+
+def unswizzle_no_tiles (texture_data, dwHeight, dwWidth, block_size):
+    if block_size in [8,16]: # Block compression
+        gridWidth, gridHeight = math.ceil(dwWidth/4), math.ceil(dwHeight/4)
+    else: # Uncompressed ARGB
+        gridWidth, gridHeight = dwWidth, dwHeight
+    morton_seq = [morton(x, gridHeight, gridWidth) for x in range(gridWidth * gridHeight)]
+    output = bytearray(gridWidth * gridHeight * block_size)
+    data_index = 0
+    for t in range(gridWidth * gridHeight):
+        y_offset = morton_seq[t] % gridHeight
+        x_offset = morton_seq[t] // gridHeight
+        dest_index = block_size * (y_offset * gridWidth + x_offset)
+        output[dest_index:dest_index+block_size] = texture_data[data_index:data_index+block_size]
+        data_index += block_size
     return(output)
 
 # ITP information from github.com/Aureole-Suite/Cradle, HUGE thank you to Kyuuhachi
@@ -568,7 +615,7 @@ def parse_texi_block (f):
                 section["data"] = {}
                 section["data"]["section_size"], section["data"]["dwWidth"], section["data"]["dwHeight"],\
                     section["data"]["compressed_size"], section["data"]["itp_revision"], section["data"]["base_format"],\
-                    section["data"]["pixel_format"], section["data"]["pixel_bit_format"], section["data"]["compression_type"],\
+                    section["data"]["pixel_tile_format"], section["data"]["pixel_bit_format"], section["data"]["compression_type"],\
                     section["data"]["multi_plane"], section["data"]["unk1"] = struct.unpack("<4I6HI", f.read(32))
             elif section["type"] == 'IALP':
                 section["data"] = {}
@@ -585,29 +632,35 @@ def parse_texi_block (f):
                 ihdr = [x for x in section_info if x['type'] == 'IHDR']
                 if len(ihdr) > 0:
                     mipmap_num = section["data"]["mipmap_num"]
-                    block_size = {6:8, 8:16, 10:16}[ihdr[0]['data']['base_format']] #BC1, BC3, BC7
+                    #16-bit ARGB, 32-bit ARGB, BC1, BC2, BC3, BC7
+                    block_size = {4:2, 5:4, 6:8, 7:16, 8:16, 10:16}[ihdr[0]['data']['base_format']]
                     if (ihdr[0]['data']['compression_type'] & 0xFFFFFF00):
                         section["data"]["bug_report"] = 'Not expected in TwnKey\'s code'
                         section["data"]["unk1"], section["data"]["unk2"] = struct.unpack("<2I", f.read(8))
                         texture_data += parse_data_blocks(f)
                     else:
-                        rawtexdata = bytes()
-                        if ihdr[0]['data']['compression_type'] in [2,3,4]:
-                            rawtexdata = parse_data_blocks(f)
+                        mipWidth = max(1, ihdr[0]['data']['dwWidth'] >> mipmap_num)
+                        mipHeight = max(1, ihdr[0]['data']['dwHeight'] >> mipmap_num)
+                        expected_size = (bpp_multipliers[ihdr[0]['data']['base_format']] * mipWidth * mipHeight // 8)
+                        rawtexdata = bytearray()
+                        if ihdr[0]['data']['compression_type'] in [1,3]:
+                            rawtexdata.extend(parse_data_blocks(f))
+                        elif ihdr[0]['data']['compression_type'] == 2:
+                            while len(rawtexdata) < expected_size:
+                                rawtexdata.extend(parse_data_blocks(f))
                         elif ihdr[0]['data']['base_format'] in valid_bpps:
-                            # This seems wrong but I don't have any proper data to check, and the header only works for BC7 right now anyway, fix later
-                            rawtexdata = f.read(bpp_multipliers[ihdr[0]['data']['base_format']]\
-                                * (ihdr[0]['data']['dwWidth']>>mipmap_num)\
-                                * (ihdr[0]['data']['dwHeight']>>mipmap_num))
+                            rawtexdata.extend(f.read(expected_size))
                         else:
                             f.seek(size-8,1)
                         if len(rawtexdata) > 0:
-                            if ihdr[0]['data']['pixel_format'] == 4:
-                                rawtexdata = unswizzle(rawtexdata, ihdr[0]['data']['dwHeight'], ihdr[0]['data']['dwWidth'], block_size)
+                            # 0: None, 3: Swizzle, 4: PS4 Tiled Swizzle.
+                            # From cradle: 1 & 2 are older swizzle formats not in ITP v3
+                            if ihdr[0]['data']['pixel_tile_format'] == 3:
+                                rawtexdata = unswizzle_no_tiles(rawtexdata, mipHeight, mipWidth, block_size)
+                            elif ihdr[0]['data']['pixel_tile_format'] == 4:
+                                rawtexdata = unswizzle(rawtexdata, mipHeight, mipWidth, block_size)
                             texture_data += rawtexdata
                             num_mipmaps += 1
-                    if mipmap_num == 0:
-                        linear_size = len(texture_data)
                 else:
                     f.seek(size-8,1)
             elif section["type"] == 'IEND':
@@ -621,7 +674,8 @@ def parse_texi_block (f):
             else:
                 section_info.append(section)
         if len(texture_data) > 0:
-            texture = dds_header(ihdr[0]['data']['dwHeight'], ihdr[0]['data']['dwWidth'], linear_size, num_mipmaps) + texture_data
+            texture = dds_header(ihdr[0]['data']['base_format'], ihdr[0]['data']["pixel_bit_format"],
+                ihdr[0]['data']['dwHeight'], ihdr[0]['data']['dwWidth'], num_mipmaps) + texture_data
         else:
             texture = b''
     else:
@@ -636,11 +690,8 @@ def obtain_textures (f, it3_contents):
         if it3_contents[texi_blocks[i]]['type'] == 'TEXI':
             it3_contents[texi_blocks[i]]['texture_name'] = f.read(36).split(b'\x00')[0].decode('ASCII')
         else: #'TEX2'
-            f.seek(4,1) #unk int
-            name = f.read(1)
-            while not name[-1:] == b'\x00':
-                name += f.read(1)
-            it3_contents[texi_blocks[i]]['texture_name'] = name.rstrip(b'\x00').decode('ASCII')
+            length, = struct.unpack("<I", f.read(4))
+            it3_contents[texi_blocks[i]]['texture_name'] = f.read(length).rstrip(b'\x00').decode('ASCII')
         print("Processing texture {0}".format(it3_contents[texi_blocks[i]]['texture_name']))
         start_offset = f.tell()
         it3_contents[texi_blocks[i]]["data"], texture = parse_texi_block(f)
@@ -722,25 +773,27 @@ def process_it3 (it3_filename, complete_maps = complete_vgmaps_default, preserve
         for i in range(len(meshes)):
             material_block = {}
             rty_block = {}
-            for j in range(len(meshes[i]["meshes"])):
+            if len(meshes[i]["meshes"]) > 0:
                 safe_filename = "".join([x if x not in "\\/:*?<>|" else "_" for x in meshes[i]["name"]])
-                write_fmt_ib_vb(meshes[i]["meshes"][j], it3_filename[:-4] +\
-                    '/meshes/{0}_{1:02d}'.format(safe_filename, j),\
-                    node_list = meshes[i]["node_list"], complete_maps = complete_maps)
-                if "material" in meshes[i]["meshes"][j] and type(meshes[i]["meshes"][j]["material"]) == dict:
-                    material_block[meshes[i]["meshes"][j]["material"]["material_name"]] = \
-                        {key:meshes[i]["meshes"][j]["material"][key] for key \
-                        in meshes[i]["meshes"][j]["material"] if key != 'material_name'}
-            if 'fmt_bitmask' in meshes[i]["meshes"][0]:
-                with open(it3_filename[:-4] + '/meshes/{0}'.format(safe_filename, j) + '.fmt_bitmask', 'wb') as f:
-                    f.write(json.dumps({'fmt_bitmask': meshes[i]["meshes"][0]['fmt_bitmask']}, indent=4).encode("utf-8"))
+                for j in range(len(meshes[i]["meshes"])):
+                    write_fmt_ib_vb(meshes[i]["meshes"][j], it3_filename[:-4] +\
+                        '/meshes/{0}_{1:02d}'.format(safe_filename, j),\
+                        node_list = meshes[i]["node_list"], complete_maps = complete_maps)
+                    if "material" in meshes[i]["meshes"][j] and type(meshes[i]["meshes"][j]["material"]) == dict:
+                        material_block[meshes[i]["meshes"][j]["material"]["material_name"]] = \
+                            {key:meshes[i]["meshes"][j]["material"][key] for key \
+                            in meshes[i]["meshes"][j]["material"] if key != 'material_name'}
+                if 'fmt_bitmask' in meshes[i]["meshes"][0]: # fmt_bitmask is the same for all submeshes
+                    with open(it3_filename[:-4] + '/meshes/{0}'.format(safe_filename, j) + '.fmt_bitmask', 'wb') as f:
+                        f.write(json.dumps({'fmt_bitmask': meshes[i]["meshes"][0]['fmt_bitmask']}, indent=4).encode("utf-8"))
             rty_blocks = [j for j in range(len(it3_contents)) if it3_contents[j]['type'] in ['RTY2', 'RTY3']\
                 and it3_contents[j]['info_name'] == meshes[i]["name"]]
+            material_json[meshes[i]["name"]] = {}
             if len(rty_blocks) > 0:
                 rty_block = it3_contents[rty_blocks[0]]['data']
                 rty_type = it3_contents[rty_blocks[0]]['type']
-            material_json[meshes[i]["name"]] = {'{}_shader_assignment'.format(rty_type.lower()): rty_block,
-                'material_parameters': material_block}
+                material_json[meshes[i]["name"]]['{}_shader_assignment'.format(rty_type.lower())] = rty_block
+            material_json[meshes[i]["name"]]['material_parameters'] = material_block
         with open(it3_filename[:-4] + '/materials_metadata.json', 'wb') as f2:
             f2.write(json.dumps(material_json, indent = 4).encode('utf-8'))
         print("Writing textures")
