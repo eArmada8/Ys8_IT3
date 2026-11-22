@@ -12,6 +12,10 @@ None of this would be possible without the work of DarkStarSword and his amazing
 
 I am very thankful for TwnKey, uyjulian, Kyuuhachi, lm, DarkStarSword, and the Kiseki modding discord for their brilliant work and for sharing that work so freely.
 
+## AI Disclosure
+
+I used AI (Claude, attached to ghidra) to help me find a few persistent errors, but I wrote the code to fix those errors.
+
 ## Requirements:
 1. Python 3.10 and newer is required for use of these scripts.  It is free from the Microsoft Store, for Windows users.  For Linux users, please consult your distro.
 3. The output can be imported into Blender using DarkStarSword's amazing plugin: https://github.com/DarkStarSword/3d-fixes/blob/master/blender_3dmigoto.py (tested on commit [5fd206c](https://raw.githubusercontent.com/DarkStarSword/3d-fixes/5fd206c52fb8c510727d1d3e4caeb95dac807fb2/blender_3dmigoto.py))  ("4D" position and normal data import must be enabled.)
