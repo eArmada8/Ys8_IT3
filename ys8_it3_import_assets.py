@@ -144,19 +144,25 @@ def create_vpa78 (submeshes, bonemap, block_type = 'VPA8'):
                     blendwt = semantics.index('BLENDWEIGHTS')
                 else:
                     blendwt = semantics.index('BLENDWEIGHT')
+                for j in range(len(submeshes[i]['vb'][blendwt]['Buffer'])):
+                    submeshes[i]['vb'][blendwt]['Buffer'][j] = [-x if x == 1.0 else x for x
+                        in submeshes[i]['vb'][blendwt]['Buffer'][j]]
                 blendidx = semantics.index('BLENDINDICES')
                 palette = sorted(list(set([x for y in [\
                     [submeshes[i]['vb'][blendidx]['Buffer'][j][k] for k in range(4)]\
                     for j in range(len(submeshes[i]['vb'][blendidx]['Buffer']))] for x in y])))
-                if len(palette) > 5:
-                    print("Warning!  Bone palette for submesh {} is greater than 4 groups, distortion may result!".format(i))
+                if len(palette) > 9:
+                    print("Warning!  Bone palette for submesh {} is greater than 9 groups, distortion may result!".format(i))
                     input("Press Enter to continue.")
                 v_unk3 = [0, 4 if len(palette) == 4 else 5 if len(palette) > 4 else 3, 0, 0]
                 bone_palette_dict = {palette[i]:i for i in range(len(palette))} # 0 should map to 0 (always unused)
                 new_bone_index = [[bone_palette_dict[k] if k in bone_palette_dict else 0 for k in j] for j in submeshes[i]['vb'][blendidx]['Buffer']]
                 submeshes[i]['vb'][blendidx]['Buffer'] = new_bone_index   
             if block_type == 'VPA8':
-                bone_palette = [x * 3 for x in palette[1:10] + [0]*(10-len(palette))] # Exclude 0 (always unused)
+                if 'BLENDINDICES' in semantics:
+                    bone_palette = [x * 3 for x in palette[1:10] + [0]*(10-len(palette))] # Exclude 0 (always unused)
+                else:
+                    bone_palette, v_unk3 = [0] * 9, [0,3,0,0]
                 vpa8_subheader = [*bbox_mid,
                     0, # v_unk0
                     [x['material_name'] for x in materials].index(submeshes[i]['material']['material_name']),
@@ -169,7 +175,10 @@ def create_vpa78 (submeshes, bonemap, block_type = 'VPA8'):
                 vertices_metadata.extend(struct.pack("<4f4I8f13I", *vpa8_subheader))
                 indices_metadata.extend(struct.pack("<3I", 0, len([x for y in submeshes[i]['ib'] for x in y]), 0))
             else: #VPA7
-                bone_palette = [x * 3 for x in palette[1:9] + [0]*(9-len(palette))] # Exclude 0 (always unused)
+                if 'BLENDINDICES' in semantics:
+                    bone_palette = [x * 3 for x in palette[1:9] + [0]*(9-len(palette))] # Exclude 0 (always unused)
+                else:
+                    bone_palette, v_unk3 = [0] * 8, [0,3,0,0]
                 vpa7_subheader = [len(submeshes[i]['vb'][0]['Buffer']), # Number of vertices - why twice?
                     *bbox_mid,
                     0, # v_unk0
@@ -498,7 +507,7 @@ def process_it3 (it3_filename, import_noskel = False):
                 # Build VPAX/VP11, BBOX, MAT6
                 rty_shader_assignment = "{}_shader_assignment".format(rty_type).lower()
                 safe_sectionname = "".join([x if x not in "\\/:*?<>|" else "_" for x in section])
-                submeshfiles = [x[:-4] for x in glob.glob(it3_filename[:-4] + '/meshes/{}_*.fmt'.format(safe_sectionname))]
+                submeshfiles = sorted([x[:-4] for x in glob.glob(it3_filename[:-4] + '/meshes/{}_*.fmt'.format(safe_sectionname))])
                 fmt_bitmask_file = it3_filename[:-4] + '/meshes/{}.fmt_bitmask'.format(safe_sectionname)
                 submeshes = []
                 for j in range(len(submeshfiles)):

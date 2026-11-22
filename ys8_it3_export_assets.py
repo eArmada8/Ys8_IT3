@@ -131,10 +131,10 @@ def make_vpa8_fmt():
     'AlignedByteOffset': '20', 'InputSlotClass': 'per-vertex', 'InstanceDataStepRate': '0'},\
     {'id': '3', 'SemanticName': 'COLOR', 'SemanticIndex': '1', 'Format': 'R8G8B8A8_UNORM',\
     'InputSlot': '0', 'AlignedByteOffset': '24', 'InputSlotClass': 'per-vertex',\
-    'InstanceDataStepRate': '0'}, {'id': '5', 'SemanticName': 'BLENDINDICES',\
+    'InstanceDataStepRate': '0'}, {'id': '4', 'SemanticName': 'BLENDINDICES',\
     'SemanticIndex': '0', 'Format': 'R8G8B8A8_UINT', 'InputSlot': '0',\
     'AlignedByteOffset': '28', 'InputSlotClass': 'per-vertex', 'InstanceDataStepRate': '0'},\
-    {'id': '4', 'SemanticName': 'BLENDWEIGHT', 'SemanticIndex': '0',\
+    {'id': '5', 'SemanticName': 'BLENDWEIGHT', 'SemanticIndex': '0',\
     'Format': 'R8G8B8A8_SNORM', 'InputSlot': '0', 'AlignedByteOffset': '32',\
     'InputSlotClass': 'per-vertex', 'InstanceDataStepRate': '0'}, {'id': '6',\
     'SemanticName': 'NORMAL', 'SemanticIndex': '0', 'Format': 'R8G8B8A8_SNORM',\
@@ -360,6 +360,9 @@ def parse_vpa78_block (f, block_type):
         mesh["vertex_count"] = mesh["header"]["num_vertices"]
         ib = read_ib_stream(buffer_i[pointer_i:pointer_i+mesh["header"]["num_indices"]*2], fmt_struct)
         vb = read_vb_stream(buffer_v[pointer_v:pointer_v+mesh["header"]["num_vertices"]*40], fmt_struct)
+        # Weights are read as *signed* normalized floats, and -1.0 is full weight, so any -1.0 must become 1.0
+        for j in range(len(vb[5]['Buffer'])):
+            vb[5]['Buffer'][j] = [abs(x) for x in vb[5]['Buffer'][j]]
         # Map bone palette to mesh global indices
         to_global = [0] + list(mesh["header"]['bone_palette'])
         try:
