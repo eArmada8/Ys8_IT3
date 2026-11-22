@@ -15,7 +15,7 @@
 # GitHub eArmada8/Ys8_IT3
 
 try:
-    import struct, io, os, numpy, shutil, json, sys, glob
+    import struct, io, os, numpy, shutil, json, sys, glob, multiprocessing
     from ys8_it3_export_assets import *
     from lib_falcompress import *
     from lib_fmtibvb import *
@@ -667,6 +667,7 @@ def process_it3 (it3_filename, import_noskel = False):
             f2.write(new_it3)
 
 if __name__ == "__main__":
+    multiprocessing.freeze_support()
     # Set current directory
     if getattr(sys, 'frozen', False):
         os.chdir(os.path.dirname(sys.executable))

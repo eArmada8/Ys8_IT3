@@ -4,7 +4,13 @@
 #
 # GitHub eArmada8/Ys8_IT3
 
-import struct, io, array
+try:
+    import struct, io, array
+    from concurrent.futures import ProcessPoolExecutor
+except ModuleNotFoundError as e:
+    print("Python module missing! {}".format(e.msg))
+    input("Press Enter to abort.")
+    raise   
 
 # C77 type 1 aka FALCOM3, thank you to TwnKey
 def parse_data_block_c77_1 (f, block_size, uncompressed_block_size, is_compressed):
@@ -262,7 +268,7 @@ def compress_mode2(input_):
         def digraph(self, pos):
             if pos < len(self.input_):
                 if pos + 1 < len(self.input_):
-                    value, = struct.unpack('<H', self.input_[pos:pos+2])
+                    value = self.input_[pos] | self.input_[pos+1] << 8
                 else:
                     value = self.input_[pos] # Returns an int
                 return (value)
@@ -272,23 +278,25 @@ def compress_mode2(input_):
             if self.pos >= 0x1FFF:
                 prev_pos = self.pos - 0x1FFF
                 dig = self.digraph(prev_pos)
-                self.head[dig] = self.next_[prev_pos % len(self.next_)]
+                self.head[dig] = self.next_[prev_pos % 0x2000]
             dig = self.digraph(self.pos)
             if self.head[dig] == 0xFFFF:
                 self.head[dig] = self.pos & 0xFFFF
             else:
                 self.next_[self.tail[dig]] = self.pos & 0xFFFF
-            self.tail[dig] = (self.pos % len(self.next_)) & 0xFFFF
-            self.next_[self.pos % len(self.next_)] = 0xFFFF
+            self.tail[dig] = (self.pos % 0x2000) & 0xFFFF
+            self.next_[self.pos % 0x2000] = 0xFFFF
             self.pos += 1
             return
         def get(self, rep_len, rep_pos):
             pos = self.head[self.digraph(self.pos)]
+            max_len = min(269, len(self.input_) - self.pos)
             while pos != 0xFFFF:
-                len_ = count_equal(self.input_[self.pos+2:], self.input_[pos+2:], 267) + 2
-                if len_ >= rep_len:
-                    rep_len, rep_pos = len_, pos
-                pos = self.next_[pos % len(self.next_)]
+                if rep_len <= max_len and self.input_[self.pos+rep_len-1] == self.input_[pos+rep_len-1]:
+                    len_ = count_equal(self.input_[self.pos+2:self.pos+269], self.input_[pos+2:pos+269], 267) + 2
+                    if len_ >= rep_len:
+                        rep_len, rep_pos = len_, pos
+                pos = self.next_[pos % 0x2000]
             return(rep_len, rep_pos)
     class Bits:
         def __init__(self, out):
@@ -324,10 +332,15 @@ def compress_mode2(input_):
     input_pos = 0
     b = Bits(b'')
     dig = Digraphs(input_)
+    n_input = len(input_)
     while input_pos < len(input_):
-        run_len = count_equal(input_[input_pos:], input_[input_pos+1:], 0xFFE) + 1
-        if run_len < 14:
-            run_len = 1
+        run_len = 1
+        if (input_pos + 13 < n_input and 
+                input_[input_pos] == input_[input_pos + 13] and 
+                input_[input_pos] == input_[input_pos + 1]):
+            run_len = count_equal(input_[input_pos:input_pos+0xFFE], input_[input_pos+1:input_pos+0xFFF], 0xFFE) + 1
+            if run_len < 14:
+                run_len = 1
         run_pos = input_pos
         if (run_len < 64) and (input_pos + 3 < len(input_)):
             run_len, run_pos = dig.get(run_len, run_pos)
@@ -372,22 +385,29 @@ def compress_mode2(input_):
     b.bits(13,0)
     return(b.out.tobytes())
 
+def _compressed_mode2_chunk(chunk_data):
+    cchunk = compress_mode2(chunk_data)
+    return(struct.pack("<H", len(cchunk) + 2) + cchunk)
+
 def compress_data_mode2(data):
     def chunk_bytes(data, chunk_size):
         if len(data) > 0:
             return([data[i*chunk_size : (i+1)*chunk_size] for i in range((len(data) - 1) // chunk_size + 1)])
         else:
             return([])
-    def compressed_chunk(chunk_data):
-        cchunk = compress_mode2(chunk_data)
-        return(struct.pack("<H", len(cchunk) + 2) + cchunk)
     chunk_data = chunk_bytes(data, 0x7FF0)
-    cdata = bytes()
-    for i in range(len(chunk_data)):
-        print("Compressing data chunk {0} of {1}.".format(i+1, len(chunk_data)))
-        cdata += compressed_chunk(chunk_data[i]) + b'\x01'
-    cdata += (compressed_chunk(chunk_data[-1][0].to_bytes(1, 'little'))
-        if len(chunk_data) > 0 else compressed_chunk(b'') + b'\x00')
+    cdata_arr = []
+    if len(chunk_data) > 1:
+        with ProcessPoolExecutor() as executor:
+            for i, compressed in enumerate(executor.map(_compressed_mode2_chunk, chunk_data), 1):
+                print("Compressing data chunk {0} of {1}.".format(i, len(chunk_data)))
+                cdata_arr.append(compressed + b'\x01')
+    elif len(chunk_data) == 1:
+        print("Compressing data chunk 1 of 1.")
+        cdata_arr.append(_compressed_mode2_chunk(chunk_data[0]) + b'\x01')
+    cdata_arr.append(_compressed_mode2_chunk(chunk_data[-1][0].to_bytes(1, 'little'))
+        if len(chunk_data) > 0 else _compressed_mode2_chunk(b'') + b'\x00')
+    cdata = b''.join(cdata_arr)
     return(struct.pack("<3I", len(cdata) + 8, len(data), len(chunk_data) + 1) + cdata)
 
 # Content should be a bytes-like object.
