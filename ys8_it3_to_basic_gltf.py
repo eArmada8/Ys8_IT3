@@ -6,17 +6,16 @@
 # For command line options (including option to dump vertices), run:
 # /path/to/python3 ys8_it3_to_basic_gltf.py --help
 #
-# Requires numpy and pyquaternion.
-# These can be installed by:
-# /path/to/python3 -m pip install numpy pyquaternion
+# Requires numpy.
+# This can be installed by:
+# /path/to/python3 -m pip install numpy
 #
 # Requires ys8_it3_export_assets.py and lib_fmtibvb.py, put in the same directory
 #
 # GitHub eArmada8/Ys8_IT3
 
 try:
-    import io, struct, sys, os, glob, numpy, json
-    from pyquaternion import Quaternion
+    import io, struct, sys, re, os, glob, numpy, json
     from ys8_it3_export_assets import *
 except ModuleNotFoundError as e:
     print("Python module missing! {}".format(e.msg))
@@ -27,7 +26,8 @@ def obtain_skeleton_data (it3_contents, it3_filename, flip_axis = True):
     nodes = [x for x in it3_contents if x['type'] == 'INFO']
     node_dict = {}
     if len(set([x['data']['name'] for x in nodes])) != len(nodes):
-        return('Error: duplicate INFO names')
+        print('Error: duplicate INFO names')
+        return(False)
     node_dict = dict([(nodes[i]['data']['name'], i+1) for i in range(len(nodes))]) #root starts at 1
     chid_dict = dict([(x['info_name'], x['data']['children']) for x in it3_contents if x['type'] == 'CHID'])
     # Insert an empty node at the origin, since root starts at 1.  Flip axis is default
@@ -51,7 +51,11 @@ def obtain_skeleton_data (it3_contents, it3_filename, flip_axis = True):
             node_blocks[i]['parentID'] = -1
             node_blocks[i]['matrix'] = node_blocks[i]['rel_matrix']
         else:
-            node_blocks[i]['parentID'] = [x['id'] for x in node_blocks if i in x['children']][0]
+            parent = [x['id'] for x in node_blocks if i in x['children']]
+            if len(parent) > 0:
+                node_blocks[i]['parentID'] = parent[0]
+            else:
+                node_blocks[i]['parentID'] = 0
             node_blocks[i]['matrix'] = numpy.dot(numpy.array(node_blocks[i]['rel_matrix']),\
                 numpy.array(node_blocks[node_blocks[i]['parentID']]['matrix'])).tolist()
     return(node_blocks)
@@ -90,8 +94,16 @@ def convert_submesh_for_gltf(submesh, flip_axis = True):
     need_index = ['WEIGHTS', 'JOINTS', 'COLOR', 'TEXCOORD']
     need_fewer_values = {'POSITION': 3, 'NORMAL': 3, 'TEXCOORD': 2}
     has_axes = ['POSITION', 'NORMAL', 'TANGENT']
-    normalize = ['NORMAL']
+    normalize = ['NORMAL', 'TANGENT']
     truncated_dxgi = {2: 'R32G32_FLOAT', 3: 'R32G32B32_FLOAT'}
+    semantics = [x['SemanticName'][:11] for x in submesh['fmt']['elements']]
+    has_weights = True
+    if 'BLENDWEIGHT' in semantics:
+        wtidx = semantics.index('BLENDWEIGHT')
+        if all([sum(x) < 1e-5 for x in submesh['vb'][wtidx]['Buffer']]):
+            has_weights = False
+    else:
+        has_weights = False
     for i in range(len(submesh['fmt']['elements'])):
         if not submesh['fmt']['elements'][i]['SemanticName'] == 'UNKNOWN':
             new_element = {'id': '{0}'.format(element_counter), 'SemanticName': '',\
@@ -105,16 +117,27 @@ def convert_submesh_for_gltf(submesh, flip_axis = True):
             if new_element['SemanticName'] in need_fewer_values.keys():
                 dxgi_format = truncated_dxgi[need_fewer_values[new_element['SemanticName']]]
                 buffer = [x[0:need_fewer_values[new_element['SemanticName']]] for x in submesh['vb'][i]["Buffer"]]
-                if new_element['SemanticName'] in has_axes and flip_axis == True:
+                if new_element['SemanticName'] in has_axes and flip_axis == True and has_weights:
                     buffer = [[x[0],x[2],-x[1]] for x in buffer]
                 if new_element['SemanticName'] in normalize:
-                    buffer = [(x/numpy.linalg.norm(x)).tolist() for x in buffer]
+                    buffer = [(x/numpy.linalg.norm(x)).tolist() if numpy.linalg.norm(x) > 1e-5 else x for x in buffer]
                 new_vb.append({"SemanticName": submesh['vb'][i]["SemanticName"],\
                     "SemanticIndex": submesh['vb'][i]["SemanticIndex"],\
                     "Buffer": buffer})
             else:
                 dxgi_format = submesh['fmt']['elements'][i]['Format']
-                new_vb.append(submesh['vb'][i])
+                buffer = list(submesh['vb'][i]['Buffer'])
+                if new_element['SemanticName'] in has_axes and flip_axis == True and has_weights:
+                    buffer = [[x[0],x[2],-x[1], x[3]] for x in buffer]
+                if new_element['SemanticName'] in normalize:
+                    for j in range(len(buffer)):
+                        n_val = numpy.linalg.norm(buffer[j][0:3])
+                        if n_val > 1e-5:
+                            x = buffer[j]
+                            buffer[j] = [x[0]/n_val, x[1]/n_val, x[2]/n_val, x[3]]
+                new_vb.append({"SemanticName": submesh['vb'][i]["SemanticName"],\
+                    "SemanticIndex": submesh['vb'][i]["SemanticIndex"],\
+                    "Buffer": buffer})
             if new_element['SemanticName'] == 'WEIGHTS':
                 weight_sums = [sum(x) for x in new_vb[-1]["Buffer"]]
                 new_vb[-1]["Buffer"] = [[x/weight_sums[i] if weight_sums[i] > 0.0 else x for x in new_vb[-1]["Buffer"][i]] for i in range(len(new_vb[-1]["Buffer"]))]
@@ -147,45 +170,50 @@ def local_to_global_bone_indices(mesh_index, mesh_struct, skel_struct):
     return(global_node_dict)
 
 def generate_materials(gltf_data, it3_contents):
-    mat_blocks = [i for i in range(len(it3_contents)) if it3_contents[i]['type'] in ['MAT4','MAT6']]
+    mat_blocks = [i for i in range(len(it3_contents)) if it3_contents[i]['type'] in ['MAT4','MAT6','MATU']]
     images = sorted(list(set([x['name'] for y in [x['textures'] for y in [x for y in mat_blocks for x in [it3_contents[y]['data']]] for x in y] for x in y])))
+    images = [x for x in images if not x == '']
     gltf_data['images'] = [{'uri':'textures/{}.png'.format(x)} for x in images]
+    material_lookup = {}
     for i in range(len(mat_blocks)):
         info_name = it3_contents[mat_blocks[i]]['info_name']
         for j in range(len(it3_contents[mat_blocks[i]]['data'])):
-            add_material = False
             material = {}
             material['name'] = it3_contents[mat_blocks[i]]['data'][j]['material_name']
-            if it3_contents[mat_blocks[i]]['type'] == 'MAT6':
+            add_textures = False
+            if it3_contents[mat_blocks[i]]['type'] in ['MAT6','MATU']:
                 for k in range(len(it3_contents[mat_blocks[i]]['data'][j]['textures'])):
                     add_texture = False
+                    if it3_contents[mat_blocks[i]]['data'][j]['textures'][k]['name'] == '':
+                        continue
                     sampler = { 'wrapS': {0:10497,1:33071,2:33648}[it3_contents[mat_blocks[i]]['data'][j]['textures'][k]['flags'][2]],\
                         'wrapT': {0:10497,1:33071,2:33648}[it3_contents[mat_blocks[i]]['data'][j]['textures'][k]['flags'][3]] }
                     texture = { 'source': images.index(it3_contents[mat_blocks[i]]['data'][j]['textures'][k]['name']), 'sampler': len(gltf_data['samplers']) }
                     if k == 0:
                         material['pbrMetallicRoughness']= { 'baseColorTexture' : { 'index' : len(gltf_data['textures']), 'texCoord': 0 },\
                             'metallicFactor' : 0.0, 'roughnessFactor' : 1.0 }
-                        add_texture = True
+                        add_texture, add_textures = True, True
                     elif it3_contents[mat_blocks[i]]['data'][j]['textures'][k]['name'] == it3_contents[mat_blocks[i]]['data'][j]['textures'][0]['name']+'n':
                         material['normalTexture'] =  { 'index' : len(gltf_data['textures']), 'texCoord': 0 }
-                        add_texture = True
+                        add_texture, add_textures = True, True
                     if add_texture == True:
-                        add_material = True
                         gltf_data['samplers'].append(sampler)
                         gltf_data['textures'].append(texture)
             else: # MAT4
-                if len(it3_contents[mat_blocks[i]]['data'][j]['textures']) > 0:
+                if (len(it3_contents[mat_blocks[i]]['data'][j]['textures']) > 0
+                        and it3_contents[mat_blocks[i]]['data'][j]['textures'][0]['name']):
                     sampler = { 'wrapS': 10497, 'wrapT': 10497 } # Figure this out later
                     texture = { 'source': images.index(it3_contents[mat_blocks[i]]['data'][j]['textures'][0]['name']), 'sampler': len(gltf_data['samplers']) }
                     material['pbrMetallicRoughness']= { 'baseColorTexture' : { 'index' : len(gltf_data['textures']), 'texCoord': 0 },\
                         'metallicFactor' : 0.0, 'roughnessFactor' : 1.0 }
-                    add_material = True
+                    add_textures = True
                     gltf_data['samplers'].append(sampler)
                     gltf_data['textures'].append(texture)
-            if add_material == True:
+            if add_textures == True:
                 material['alphaMode'] = 'MASK' # Not optimal since clearly some models use some form of alpha blending, but this will have to do.
-                gltf_data['materials'].append(material)
-    return(gltf_data)
+            material_lookup[(info_name, material['name'])] = len(gltf_data['materials'])
+            gltf_data['materials'].append(material)
+    return(gltf_data, material_lookup)
 
 def write_glTF(filename, it3_contents, mesh_struct, skel_struct, flip_axis = True, render_non_skel_meshes = False):
     gltf_data = {}
@@ -203,24 +231,14 @@ def write_glTF(filename, it3_contents, mesh_struct, skel_struct, flip_axis = Tru
     gltf_data['skins'] = []
     gltf_data['textures'] = []
     giant_buffer = bytes()
-    mesh_nodes = []
     buffer_view = 0
-    gltf_data = generate_materials(gltf_data, it3_contents)
+    gltf_data, material_lookup = generate_materials(gltf_data, it3_contents)
     missing_textures = [x['uri'] for x in gltf_data['images'] if not os.path.exists(x['uri'])]
     if len(missing_textures) > 0:
         print("Warning:  The following textures were not found:")
         for texture in missing_textures:
             print("{}".format(texture))
-    g_material_dict = {gltf_data['materials'][i]['name']:i for i in range(len(gltf_data['materials']))}
-    vpax_blocks = [i for i in range(len(it3_contents)) if it3_contents[i]['type'] in ['VPA7', 'VPA8', 'VPA9', 'VPAX', 'VP11']]
-    material_dict = {}
-    for i in range(len(vpax_blocks)):
-        mat_block = [j for j in range(len(it3_contents)) if it3_contents[j]['type'] in ['MAT4', 'MAT6'] and it3_contents[j]['info_name'] == it3_contents[vpax_blocks[i]]['info_name']][0]
-        local_mat_index = it3_contents[mat_block]
-        material_dict[it3_contents[vpax_blocks[i]]['info_name']] \
-            = [g_material_dict[it3_contents[mat_block]['data'][x['header']['material_id']]['material_name']] for x in it3_contents[vpax_blocks[i]]['data'] \
-                if x['header']['material_id'] < len(it3_contents[mat_block]['data']) \
-                and it3_contents[mat_block]['data'][x['header']['material_id']]['material_name'] in g_material_dict]
+    vpax_blocks = [i for i in range(len(it3_contents)) if it3_contents[i]['type'] in ['VPA7', 'VPA8', 'VPA9', 'VPAX', 'VP11', 'VPAU']]
     for i in range(len(skel_struct)):
         node = {'children': skel_struct[i]['children'], 'name': skel_struct[i]['name'],\
             'matrix': [x for y in numpy.array(skel_struct[i]['rel_matrix']).tolist() for x in y]}
@@ -229,13 +247,16 @@ def write_glTF(filename, it3_contents, mesh_struct, skel_struct, flip_axis = Tru
         if len(gltf_data['nodes'][i]['children']) == 0:
             del(gltf_data['nodes'][i]['children'])
     for i in range(len(mesh_struct)): # Mesh
-        mesh_rty2 = [j for j in range(len(it3_contents)) if it3_contents[j]['type'] == 'RTY2' and it3_contents[j]['info_name'] == it3_contents[vpax_blocks[i]]['info_name']][0]
+        mesh_rty2 = [j for j in range(len(it3_contents)) if it3_contents[j]['type'] in ['RTY2', 'RTY3']
+            and it3_contents[j]['info_name'] == it3_contents[vpax_blocks[i]]['info_name']][0]
         rty2_setting = it3_contents[mesh_rty2]['data']['material_variant']
         primitives = []
         mesh_node = [j for j in range(len(gltf_data['nodes']))\
             if gltf_data['nodes'][j]['name'] == mesh_struct[i]["name"]][0]
+        mesh_has_weights = False
         if rty2_setting != 8 or render_non_skel_meshes == True: # Node list should always have at least one node, even non-skeletal
             for j in range(len(mesh_struct[i]["meshes"])): # Submesh
+                this_mesh_has_weights = True
                 print("Processing {0} submesh {1}...".format(mesh_struct[i]["name"], j))
                 submesh = convert_submesh_for_gltf(mesh_struct[i]["meshes"][j], flip_axis = flip_axis)
                 gltf_fmt = submesh['fmt']
@@ -267,6 +288,15 @@ def write_glTF(filename, it3_contents, mesh_struct, skel_struct, flip_axis = Tru
                     block_offset += len(submesh['vb'][element]['Buffer']) *\
                         gltf_fmt['elements'][element]['componentStride']
                     buffer_view += 1
+                    if gltf_fmt['elements'][element]['SemanticName'] == 'WEIGHTS_0':
+                        if not all([sum(x) < 1e-5 for x in submesh['vb'][element]['Buffer']]):
+                            mesh_has_weights = True
+                        else:
+                            this_mesh_has_weights = False
+                if this_mesh_has_weights == False:
+                    if 'JOINTS_0' in primitive["attributes"]:
+                        del(primitive["attributes"]['JOINTS_0'])
+                    del(primitive["attributes"]['WEIGHTS_0'])
                 vb_stream.seek(0)
                 giant_buffer += vb_stream.read()
                 vb_stream.close()
@@ -291,31 +321,32 @@ def write_glTF(filename, it3_contents, mesh_struct, skel_struct, flip_axis = Tru
                 ib_stream.close()
                 del(ib_stream)
                 primitive["mode"] = 4 #TRIANGLES
-                if mesh_struct[i]["name"] in material_dict and len(material_dict[mesh_struct[i]["name"]]) > j:
-                    primitive["material"] = material_dict[mesh_struct[i]["name"]][j]
+                submesh_material = mesh_struct[i]["meshes"][j]['material']
+                if isinstance(submesh_material, dict) and \
+                        (mesh_struct[i]["name"], submesh_material['material_name']) in material_lookup:
+                    primitive["material"] = material_lookup[(mesh_struct[i]["name"], submesh_material['material_name'])]
                 primitives.append(primitive)
                 del(submesh)
             gltf_data['nodes'][mesh_node]['mesh'] = len(gltf_data['meshes'])
             gltf_data['meshes'].append({"primitives": primitives, "name": mesh_struct[i]["name"]})
-        if len(mesh_struct[i]["node_list"]) > 0:
-            global_node_dict = local_to_global_bone_indices(i, mesh_struct, skel_struct)
-            gltf_data['nodes'][mesh_node]['skin'] = len(gltf_data['skins'])
-            inv_mtx_buffer = bytes()
-            for k in global_node_dict:
-                inv_bind_mtx = [num for row in numpy.linalg.inv(numpy.array(skel_struct[global_node_dict[k]]['matrix'])).tolist() for num in row]
-                inv_bind_mtx = [round(x,15) for x in inv_bind_mtx]
-                inv_mtx_buffer += struct.pack("<16f", *inv_bind_mtx)
-            gltf_data['skins'].append({"inverseBindMatrices": len(gltf_data['accessors']), "joints": list(global_node_dict.values())})
-            gltf_data['accessors'].append({"bufferView" : buffer_view,\
-                "componentType": 5126,\
-                "count": len(global_node_dict),\
-                "type": "MAT4"})
-            gltf_data['bufferViews'].append({"buffer": 0,\
-                "byteOffset": len(giant_buffer),\
-                "byteLength": len(inv_mtx_buffer)})
-            buffer_view += 1
-            giant_buffer += inv_mtx_buffer
-    gltf_data['scenes'][0]['nodes'].extend(mesh_nodes)
+            if (len(mesh_struct[i]["node_list"]) > 0) and (len(mesh_struct[i]["meshes"]) > 0) and mesh_has_weights:
+                global_node_dict = local_to_global_bone_indices(i, mesh_struct, skel_struct)
+                gltf_data['nodes'][mesh_node]['skin'] = len(gltf_data['skins'])
+                inv_mtx_buffer = bytes()
+                for k in global_node_dict:
+                    inv_bind_mtx = [num for row in numpy.linalg.inv(numpy.array(skel_struct[global_node_dict[k]]['matrix'])).tolist() for num in row]
+                    inv_bind_mtx = [round(x,15) for x in inv_bind_mtx]
+                    inv_mtx_buffer += struct.pack("<16f", *inv_bind_mtx)
+                gltf_data['skins'].append({"inverseBindMatrices": len(gltf_data['accessors']), "joints": list(global_node_dict.values())})
+                gltf_data['accessors'].append({"bufferView" : buffer_view,\
+                    "componentType": 5126,\
+                    "count": len(global_node_dict),\
+                    "type": "MAT4"})
+                gltf_data['bufferViews'].append({"buffer": 0,\
+                    "byteOffset": len(giant_buffer),\
+                    "byteLength": len(inv_mtx_buffer)})
+                buffer_view += 1
+                giant_buffer += inv_mtx_buffer
     gltf_data['buffers'].append({"byteLength": len(giant_buffer), "uri": filename[:-4]+'.bin'})
     with open(filename[:-4]+'.bin', 'wb') as f:
         f.write(giant_buffer)
@@ -328,6 +359,9 @@ def process_it3 (it3_filename, flip_axis = True, render_non_skel_meshes = False,
         it3_contents = parse_it3(f)
         it3_contents, mesh_struct = obtain_mesh_data(f, it3_contents, it3_filename, preserve_gl_order = False, trim_for_gpu = True)
     skel_struct = obtain_skeleton_data(it3_contents, it3_filename, flip_axis = flip_axis)
+    if skel_struct == False:
+        print('Error: duplicate INFO names, corrupt IT3.  Skipping file...')
+        return
     if os.path.exists(it3_filename[:-4] + '.gltf') and (overwrite == False):
         if str(input(it3_filename[:-4] + ".gltf exists! Overwrite? (y/N) ")).lower()[0:1] == 'y':
             overwrite = True
