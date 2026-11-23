@@ -28,6 +28,8 @@ Double click the python script and it will search the current folder for all .it
 
 In regards to textures, for Ys 8 and 9 models (modern TEXI/TEX2 blocks) the script will output DDS files.  Older games, the script will output raw ITP files (Falcom format).  Please use [Cradle](https://github.com/Aureole-Suite/Cradle/releases/) by Kyuuhachi to convert the ITP files into useable PNG files.
 
+*Note:* Various IT3 containers use *external* textures, so no textures will be written by this tool at the time of export.  You can find the name of the texture in the `materials_metadata.json` file, and they will have the extension of `.itp`.  This tool only handles `.it3` files, but you can use [Cradle](https://github.com/Aureole-Suite/Cradle) to convert the external `.itp` textures.
+
 **Command line arguments:**
 `ys8_it3_export_assets.py [-h] [-c] [-t] [-o] it3_filename`
 
