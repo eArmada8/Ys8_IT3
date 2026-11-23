@@ -38,7 +38,7 @@ Shows help message.
 .vgmap files will have the entire skeleton, with every bone available to the mesh, included with each mesh.  This will result in many empty vertex groups upon import into Blender.  This option will cause the script to only include vertex groups that contain at least one vertex.
 
 `-g, --preserve_gl_order`
-By default, the script will change the order of the triangles from OpenGL format to Direct3D format (from counter-clockwise to clockwise) for better compatibility with Blender and glTF.  This switch preserves the original index buffer order.  (Note that for import, the order will be converted back, so do not use this option for modding the game.)
+By default, the script will change the order of the triangles from OpenGL format to Direct3D format (from counter-clockwise to clockwise) for better compatibility with Blender and glTF.  This switch preserves the original index buffer order.  (Note that for import, by default the order will be converted back, so do not use this option for modding the game.)
 
 `-t, --trim_for_gpu`
 Trim vertex buffer for GPU injection (3DMigoto).  Meshes in the IT3 file have 18 vertex buffer semantics.  Only 12 of these are actually loaded into GPU memory.  This option produces smaller .vb files (with matching .fmt files) with the extraneous buffers discarded, so that the buffers can be used for injection with 3DMigoto.
@@ -66,6 +66,9 @@ It will make a backup of the original, then overwrite the original.  It will not
 
 **Command line arguments:**
 `ys8_it3_import_assets.py [-h] it3_filename`
+
+`-g, --preserve_gl_order`
+By default, the script will change the order of the triangles from Direct3D format to OpenGL format (from clockwise to counter-clockwise) as the game expects the latter but the former is compatible with Blender and glTF.  This switch preserves the original index buffer order.  (Only use this if you used its mirror argument at the time of export.)
 
 `-n, --import_noskel`
 The default behavior of the script is to skip over non-rendered meshes such as hitboxes and copy those directly from the IT3.  This command will instruct the script to treat those meshes as it would rendered meshes, and import them from .fmt/.ib/.vb (or delete them if the meshes are absent).  If using ys8_it3_to_basic_gltf.py and ys8_gltf_to_meshes.py, be warned that the default behavior of ys8_it3_to_basic_gltf.py is to omit these meshes, so using this option will result in loss of the non-rendered meshes unless you also use the `--render_no_skel` option in ys8_it3_to_basic_gltf.py.

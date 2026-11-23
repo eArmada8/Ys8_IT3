@@ -338,7 +338,7 @@ def parse_vpa78_block (f, block_type):
         buffer_v = b''.join([parse_data_blocks(f) for i in range(math.ceil(size1 / 0x40000))]) # len(data1) == size1
         with io.BytesIO(parse_data_blocks(f)) as ff:
             p_arr_i = [struct.unpack("<3I", ff.read(12)) for i in range(count)]
-        buffer_i = b''.join([parse_data_blocks(f) for i in range(math.ceil(size2 / 0x40000))]) # len(data2) * 2 == size2
+        buffer_i = b''.join([parse_data_blocks(f) for i in range(math.ceil((size2 / 2) / 0x40000))]) # len(data2) * 2 == size2
     fmt_struct = make_vpa8_fmt()
     section_info = []
     mesh_buffers = []
